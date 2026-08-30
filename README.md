@@ -1,5 +1,7 @@
 # Razorpay AI Buildathon — Subscription Recovery Agent
 
+[![tests](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml)
+
 **Track 1: AI Growth & Agentic Commerce**
 
 An agent that picks up exactly where Razorpay's own subscription engine
