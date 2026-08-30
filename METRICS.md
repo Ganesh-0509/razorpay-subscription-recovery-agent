@@ -18,6 +18,13 @@ Run 2 at `logs/pre_accuracy_fix/`, Run 3 at `logs/run3_before_third_fix/`.
 `total_processed: 150` — this run completed in a single pass, no
 interruption. (Run 3, preserved at `logs/run3_before_third_fix/`, is the
 one with the real mid-batch kill/resume story — still cited in §7.)
+
+**Read §2.4 before quoting any match-rate number from this page.** The
+150-record LLM-accuracy figures are really 15 unique scenarios repeated
+with different amounts (`decline_description` is fixed per code,
+`temperature: 0` makes output deterministic) — §2.4 explains exactly what
+that does and doesn't change about what these numbers mean, and reports a
+genuine out-of-sample generalization test run specifically to check it.
 (`already_done_from_checkpoint: 124, remaining: 26`); `run_finished`:
 `2026-08-30T13:01:42Z`. A third real instance of the exact resilience
 story BUILD_LOG.md §3.6/§12 already documents twice — see §7 below.
@@ -155,9 +162,65 @@ enough for rule 3"). Validation happened in two stages, both real:
 **Full trajectory, all four points independently verified except Run 1:**
 ~87% → 46.0% → 22.0% → **0.7%** override rate.
 
----
+### 2.4 An important caveat about all of the above, found and tested directly
 
-## 3. Final action distribution (after the gate, i.e. what actually ran)
+**The "150" in every number above overstates how many distinct scenarios
+were actually tested.** `decline_description` is a fixed string per code
+in `config/decline_policy.json` — it never varies between records, only
+the code does. Combined with `temperature: 0` (deterministic output) and
+the fact that no rule references `amount_paise` or the record ID, this
+means **every record sharing a decline code gets the identical proposed
+action, with zero variance** — verified directly: in Run 4, `card_expired`
+proposed `payment_link_nudge` in all 26 of its occurrences, `insufficient_funds`
+proposed `delayed_retry` in all 41 of its occurrences, and so on for every
+code, with no exceptions. **The real sample size for "does the LLM
+correctly classify this kind of situation" was 15 unique scenarios, not
+150** — the 150 number is only meaningful for the revenue/recovery
+metrics (§1, §3.1), which do depend on how often each code occurs.
+
+**Tested for real, not just conceded:** ran `propose_action()` against 16
+hand-written alternate phrasings of the same 16 underlying situations —
+deliberately sharing no wording with `config/decline_policy.json`'s fixed
+descriptions (e.g. `card_expired`'s catalog text "Customer's card has
+passed its expiration date" vs. the test's "The card on file expired last
+month"; `gateway_technical_error`'s "Partner bank downtime prevented
+payment processing" vs. "A temporary outage on the payment gateway's
+servers blocked the transaction"). **Result: 16/16 (100%) matched
+policy** on wording the model had never seen in this exact form. This is
+real evidence the schema's rules generalize to *how a situation is
+described*, not just to the 16 exact fixed strings they were tuned
+against — the model appears to be reasoning about the underlying category
+(customer-actionable vs. infra failure vs. funds issue vs. fraud vs.
+unrecoverable), not pattern-matching literal text.
+
+**What this does and doesn't prove, stated precisely:**
+- **Does prove:** the fix isn't merely memorizing the 16 fixed catalog
+  strings — paraphrased situations in a similar register (clean, concise,
+  English, single-reason) are classified correctly.
+- **Doesn't prove:** robustness to decline codes outside this 16-entry
+  catalog, ambiguous or multi-reason real-world decline text, non-English
+  text, or genuinely adversarial phrasing — none of that has been tested,
+  because none of it exists in either dataset used so far.
+- **The actual safety net for a genuinely unknown decline code isn't the
+  LLM at all — it's `get_decline_code()`, which raises `KeyError` on any
+  code not in the policy table** (`test_unknown_code_raises_keyerror`)
+  rather than letting the model guess at something it's never seen. A
+  real production version of this agent would need that boundary handled
+  explicitly (route to manual review, not crash) — currently it would
+  crash the batch for one record and be caught by `agent.py`'s per-record
+  try/except, logged as `record_processing_error`, not silently misclassified.
+
+**Bottom line on generalization:** this project has now tested two
+different things, and they answer two different questions. The 150-record
+batch runs (§2, §2.1) prove the *architecture* — proposal/execution
+separation, the gate, the audit trail — works end to end at volume. The
+16-phrasing test above proves the *prompt fix* generalizes past rote
+memorization, at least within the same 16 known situation categories.
+Neither one is evidence this works on a genuinely new, real-world dataset
+with decline reasons or phrasing this project has never encountered —
+that would need either a much larger held-out set of real Razorpay
+decline messages (not available) or a deliberately adversarial synthetic
+set built to probe exactly that gap, which hasn't been built yet.
 
 | Final action | Count | % of 150 |
 |---|---|---|
@@ -273,5 +336,9 @@ narrated hypotheticals.
   effects, which were not assumed away but found by actually re-running
   the batch, twice.
 - **Don't prove:** real-world revenue recovery (everything is simulated),
-  the spending cap working under real load (0 fires in 150 records), or
-  idempotency working under real load (0 duplicate IDs in the test set).
+  the spending cap working under real load (0 fires in 150 records),
+  idempotency working under real load (0 duplicate IDs in the test set),
+  or that the LLM's accuracy holds on decline text this project has never
+  seen — the 150-record match rate is really 15 unique scenarios repeated
+  (§2.4), and even the 16-phrasing generalization test only probes
+  paraphrases of those same 15 known situations, not new ones.

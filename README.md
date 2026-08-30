@@ -136,6 +136,19 @@ ambiguous single case, not a pattern. And the gate doesn't retire even at
 0.7%: the spending cap and idempotency checks are properties of the
 money-moving action itself, not of the model's judgment.
 
+**One honest caveat, found and then tested, not just disclosed:** the
+150-record match rate is really **15 unique scenarios**, not 150 —
+`decline_description` is a fixed string per code and the model runs at
+`temperature: 0`, so every record sharing a code gets the identical
+proposed action every time (verified directly, zero variance). Rather
+than leave that as an unresolved gap, 16 hand-written alternate phrasings
+of those same situations — sharing no wording with the fixed catalog —
+were run through the model directly: **16/16 (100%) matched policy**,
+real evidence the fix generalizes past rote memorization of exact
+strings. Full detail, including what this still doesn't prove (decline
+codes outside this catalog, ambiguous or non-English real-world text):
+`METRICS.md` §2.4.
+
 ## 5. Visual Proof (No Frontend Needed)
 
 This project is intentionally backend-only — the rubric asks for a
