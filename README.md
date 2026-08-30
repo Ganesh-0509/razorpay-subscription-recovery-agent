@@ -14,11 +14,16 @@ next — modeled after the pattern in Razorpay's own [Agent Studio][studio]
 entirely free and local.
 
 Razorpay's Agent Studio already ships a production Subscription Recovery
-Agent (voice-call-based, closed guardrail logic, sales-gated access) — we
-picked this exact problem on purpose, not to compete with it, but to prove
-the same proposal/execution-separation and audit-trail pattern from first
-principles, with a raw inspectable log and an editable policy table instead
-of a dashboard summary. Full reasoning in `BUILD_LOG.md` §1.1.
+Agent — we picked this exact problem on purpose, not to compete with it,
+but to prove the same proposal/execution-separation and audit-trail
+pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
+
+| | Their Subscription Recovery Agent | This project |
+|---|---|---|
+| Recovery mechanism | Voice call to the subscriber (ElevenLabs) | Payment link / automated retry |
+| Guardrail logic | Internal certification process (closed) | One human-readable Python table, `decline_codes.py` |
+| Audit trail | Hosted dashboard summary ("what/when") | Raw per-decision JSONL, LLM reasoning + gate override reasoning both logged |
+| Access | Sales-assisted early access (Typeform) | Runs today, $0, personal test-mode account |
 
 [studio]: https://razorpay.com/agent-studio/
 
