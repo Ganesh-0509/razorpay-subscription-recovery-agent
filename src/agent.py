@@ -17,6 +17,7 @@ kept in-process here to remove subprocess-management risk from a short
 build window; call this out explicitly in the pitch video.
 """
 
+import argparse
 import asyncio
 import json
 from pathlib import Path
@@ -53,10 +54,28 @@ def _extract_tool_text(call) -> str | None:
     return getattr(first, "text", None)
 
 
-async def process_one(client: Client, gate: Gate, audit: AuditLogger, sub: dict) -> dict:
+async def process_one(
+    client: Client, gate: Gate, audit: AuditLogger, sub: dict, inject_failure: str | None = None
+) -> dict:
     policy = get_decline_code(sub["decline_code"])
 
-    proposal = propose_action(sub, policy.description, policy.source.value)
+    # Deterministic, on-demand version of D4 (BUILD_LOG.md §7.3) for live
+    # demos - forces the exact same graceful-degradation code below that
+    # already runs for a real Ollama hiccup, without needing to wait for
+    # one or fake it inside ollama_client.py. Every other record in the
+    # run still calls the real model normally.
+    if inject_failure == "llm_parse_failure":
+        proposal = {
+            "action": None,
+            "reasoning": "[injected for demo] simulated: model returned no usable tool call",
+        }
+    elif inject_failure == "llm_invalid_action":
+        proposal = {
+            "action": "definitely_not_a_real_action",
+            "reasoning": "[injected for demo] simulated: model proposed an action outside the known enum",
+        }
+    else:
+        proposal = propose_action(sub, policy.description, policy.source.value)
     llm_action_raw = proposal["action"]
 
     # Graceful degradation: if the model failed to produce a usable tool
@@ -168,7 +187,25 @@ def _append_checkpoint(result: dict):
         f.write(json.dumps(result, default=str) + "\n")
 
 
-async def run():
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the subscription recovery agent pipeline.")
+    parser.add_argument(
+        "--inject-failure",
+        choices=["llm_parse_failure", "llm_invalid_action"],
+        default=None,
+        help=(
+            "Force the FIRST remaining record down a real graceful-degradation "
+            "path (D4, BUILD_LOG.md §7.3) instead of calling Ollama for it - "
+            "for demoing 'one failure handled gracefully' live on camera "
+            "instead of pointing at a historical log line. Every other "
+            "record in the run is unaffected and calls the real model "
+            "normally."
+        ),
+    )
+    return parser.parse_args()
+
+
+async def run(inject_failure: str | None = None):
     if not DATA_PATH.exists():
         raise SystemExit("No data found. Run `python src/generate_data.py` first.")
 
@@ -203,9 +240,15 @@ async def run():
     print(f"{len(done_ids)} already done (checkpoint), {len(remaining)} remaining")
 
     async with Client(mcp_server) as client:
-        for sub in remaining:
+        for i, sub in enumerate(remaining):
+            # Only the first record in a run can be injected - keeps the
+            # rest of the batch's numbers meaningful while still proving
+            # the failure path live.
+            inject = inject_failure if (inject_failure and i == 0) else None
+            if inject:
+                print(f"[demo] injecting '{inject}' failure for {sub['subscription_id']}")
             try:
-                result = await process_one(client, gate, audit, sub)
+                result = await process_one(client, gate, audit, sub, inject_failure=inject)
             except Exception as e:
                 # A single record's unexpected failure must not take down a
                 # 150-record batch run - log it and keep going. Discovered
@@ -290,4 +333,5 @@ def write_results(results: list[dict]):
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    cli_args = parse_args()
+    asyncio.run(run(inject_failure=cli_args.inject_failure))

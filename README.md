@@ -158,6 +158,11 @@ ollama pull llama3.1:8b
 cd src
 python generate_data.py   # writes data/halted_subscriptions.json (synthetic)
 python agent.py            # runs the full pipeline, writes RESULTS.md and logs/audit_log.jsonl
+
+# Demo mode: force the "one failure handled gracefully" moment on the
+# first record live, instead of pointing at a historical log line -
+# python agent.py --inject-failure llm_parse_failure
+# python agent.py --inject-failure llm_invalid_action
 ```
 
 ## Tests
