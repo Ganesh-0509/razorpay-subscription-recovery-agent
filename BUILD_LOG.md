@@ -24,6 +24,7 @@
 10. [Demo Script](#10-demo-script) — done
 11. [Timeline & Submission](#11-timeline--submission) — done
 12. [Open Questions / Risks](#12-open-questions--risks) — done
+13. [Stretch: Generalizing Beyond Subscriptions](#13-stretch-generalizing-beyond-subscriptions) — done
 
 ---
 
@@ -473,3 +474,19 @@ Remaining: pitch video recording, final README pass, application form submission
 - **Route uses a labeled simulated Linked Account ID** (`acc_sim_partner001`) since onboarding a real one is a manual Razorpay-dashboard step outside this codebase's control.
 - **The 46% override rate got a second pass.** An independent diagnosis found two more systematic biases beyond the original `no_action_fraud` schema-clarity bug — the model was reading customer-fixable card issues (expired, disabled, wrong CVV) as unrecoverable, and defaulting to "wait and retry" for technical/bank failures regardless of `decline_source`. The tool schema in `ollama_client.py` was reworded with an ordered decision rule and worked examples to target both directly (full diagnosis and exact confusion counts in `METRICS.md` §2). A full 150-record re-run against the fix is in progress as of this writing — this section will be updated with the actual before/after number once it completes, not a projected one.
 - **Deadline is confirmed but scope is explicitly not being cut for it (§11)** — if time genuinely runs short near 5 September, the Route stretch goal (already complete) is the safe thing to have built early, since it was always the first candidate to cut if needed and instead got finished.
+
+---
+
+## 13. Stretch: Generalizing Beyond Subscriptions
+
+**Why this exists:** a fair interview question about this project is "does this only work for subscriptions?" The honest answer, before this section existed, was "untested, but the safety architecture doesn't look subscription-specific." This section replaces that with a real second pipeline instead of an assertion.
+
+**What's actually domain-specific vs. generic, verified by what had to change:** `gate.py` and `config/decline_policy.json` needed **zero changes** — the gate only ever operates on a generic string key, a decline code, a proposed action, and an amount; it has no subscription-specific field anywhere. `mcp_server.py`'s tools needed zero changes either. The only thing that changed was `ollama_client.py`'s `propose_action()`, which gained three optional parameters (`situation`, `id_field`, `record_label`) defaulting to reproduce the exact original subscription prompt byte-for-byte — so `agent.py`'s existing calls and every already-passing test are untouched.
+
+**The domain difference is real, not cosmetic, and the LLM is told about it explicitly:** a subscription reaches this codebase only *after* Razorpay's own automatic 3-day/3-attempt retry cycle already failed (§1) — this agent is a last resort. A one-time payment has no such cycle; Razorpay does nothing further after one failed checkout attempt, so this agent is the *first* thing to ever see the failure. `agent_onetime.py` passes a different `situation` string saying exactly this, on the theory that "retry after Razorpay already tried 3 times and failed" and "retry when nothing has been tried yet" are different situations that could reasonably warrant different judgment from the model — not just a relabeled copy of the subscription prompt.
+
+**New synthetic dataset, not a renamed copy:** `generate_data_onetime.py` produces `data/failed_onetime_payments.json` with a different decline-code weighting (more authentication/CVV/checkout-entry mistakes, less "insufficient funds on a recurring billing date" — a one-off purchase and a recurring bill fail differently) and deliberately omits `previous_retry_count`/`halted_days_ago`, since neither concept applies to a payment nothing has retried yet. Tested directly (`tests/test_generate_data_onetime.py`): every weighted code is real, every record has a valid amount and a unique ID, and the absence of the subscription-only fields is asserted, not assumed.
+
+**Scope deliberately kept smaller than the main pipeline:** 30 records by default (not 150), and no checkpoint/resume — this is a stretch-goal demonstration of architectural reuse, not a second full production pipeline. Building checkpointing twice for this scope wasn't judged worth the time against the higher-impact items still open before the deadline.
+
+**Result, from a real run** (not simulated - this batch ran with the same real `rzp_test_` keys already set up for §12's real-MCP-server verification, so every executed action here also went through Razorpay's real official MCP server): [RESULTS_ONETIME.md](RESULTS_ONETIME.md) has the full breakdown.

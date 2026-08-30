@@ -126,6 +126,21 @@ with real keys — see [`REAL_MCP_RESULTS.md`](REAL_MCP_RESULTS.md) for the
 actual Razorpay test-mode object IDs it created (`order_...`, `plink_...`,
 all `simulated: false`).
 
+## Stretch goal: generalizing beyond subscriptions
+
+```bash
+cd src
+python generate_data_onetime.py   # writes data/failed_onetime_payments.json
+python agent_onetime.py            # writes RESULTS_ONETIME.md and logs/audit_log_onetime.jsonl
+```
+
+Proves the gate/policy/audit-log pattern isn't subscription-specific: the
+exact same `Gate`, `config/decline_policy.json`, and MCP tools handle
+failed one-time payments too, with only the LLM's situation description
+changed (a one-time payment has no automatic Razorpay retry cycle to have
+already failed — this agent is the first thing to see it, not the last
+resort). `gate.py` needed zero changes. Full reasoning in `BUILD_LOG.md` §13.
+
 ## Stretch goal: Route (split settlement)
 
 ```bash
