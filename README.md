@@ -185,8 +185,10 @@ a hosted product. Here's what to actually show instead of a UI:
   runs simulated by default so the repo works for anyone without a
   Razorpay account.
 - **A known, disclosed accuracy regression on 3 decline codes**
-  (`authentication_failed`, `card_declined`, `payment_failed`) —
-  full root-cause and fix status in `METRICS.md` §2.2.
+  (`authentication_failed`, `card_declined`, `payment_failed`) — a third
+  schema fix resolved it on a targeted 33-record validation (100% match),
+  but hasn't yet been confirmed with a full 150-record re-run. Full detail
+  in `METRICS.md` §2.3.
 
 Full project docs: [`BUILD_LOG.md`](BUILD_LOG.md) (problem statement, every
 technical decision with reasoning, architecture, protocol, gate design,

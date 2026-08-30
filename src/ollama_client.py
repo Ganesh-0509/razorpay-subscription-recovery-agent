@@ -45,40 +45,65 @@ DECIDE_ACTION_TOOL = {
                     # and picking it for cases it explicitly reasoned were NOT
                     # fraud (e.g. reasoning "not a fraudulent transaction" ->
                     # action no_action_fraud). See BUILD_LOG.md.
-                    # Rewritten as an ordered decision rule + worked examples after
-                    # analyzing 69 real gate overrides: the plain per-value
-                    # descriptions below still left two systematic biases -
-                    # (a) reading any customer-fixable card issue (expired,
-                    # disabled, wrong CVV) as "unrecoverable" instead of
-                    # "nudge them to fix it", and (b) ignoring decline_source
-                    # and defaulting to "wait and retry" for technical/bank
-                    # failures that should retry immediately, or for
-                    # ambiguous declines that actually need a payment link.
-                    # See METRICS.md §2.2 for the exact confusion counts this
-                    # targets.
+                    # Rewritten a second time after Run 3 (METRICS.md §2.2):
+                    # the first rewrite (below, superseded) fixed the original
+                    # two biases completely (every one of those codes hit
+                    # 100%) but introduced a new one on 3 codes -
+                    # authentication_failed (source=customer, 6% match),
+                    # card_declined and payment_failed (source=bank, 0% each).
+                    # Root cause, verified against the exact confusion counts:
+                    # (a) the model was treating ANY bank-sourced decline as
+                    # an infra failure under rule 3, even ones with no
+                    # downtime/timeout language at all - a generic "declined
+                    # by the customer's bank" is not the same claim as "bank
+                    # experienced downtime", but the old rule 3 only checked
+                    # decline_source, not whether the description actually
+                    # named an infra problem; (b) authentication_failed
+                    # (source=customer, "Incorrect OTP entry or browser
+                    # closure") was falling through to a generic "customer
+                    # issue, just wait" read despite rule 2 already naming
+                    # "re-authenticate" - not specific enough to stop the
+                    # model conflating it with a funds/limit issue (rule 4).
+                    # Fixed below with explicit negative contrast examples
+                    # naming these exact codes, not just positive examples.
                     "description": (
                         "Choose exactly one action. Apply these rules in order:\n"
                         "1. Bank flagged this decline specifically as fraud/risk -> 'no_action_fraud'.\n"
                         "2. The CUSTOMER must personally do something before this can ever succeed "
-                        "(supply a new/updated card, enter a correct CVV, re-authenticate, activate "
-                        "the card for online use) -> 'payment_link_nudge'. This includes an expired "
-                        "card, a card disabled or inactive for online use, a wrong CVV, or a failed "
-                        "OTP/authentication. These are customer-FIXABLE, not unrecoverable.\n"
-                        "3. decline_source is 'network', 'gateway', or 'bank' AND it's a system/"
-                        "infrastructure failure (timeout, downtime, technical error) that is nobody's "
-                        "fault and may already be resolved -> 'immediate_retry'.\n"
-                        "4. decline_source is 'customer' AND the issue is about available funds or a "
-                        "transaction limit, not the payment method itself -> 'delayed_retry' (give it "
-                        "time to clear, e.g. next payday).\n"
+                        "(supply a new/updated card, enter a correct CVV, re-enter an OTP/re-authenticate, "
+                        "activate the card for online use, or simply attempt payment again some other "
+                        "way since the bank gave no further detail) -> 'payment_link_nudge'. This "
+                        "includes an expired card, a card disabled or inactive for online use, a wrong "
+                        "CVV, a failed OTP/authentication (including 'browser closure during "
+                        "verification' - that IS a failed authentication, NOT a funds issue), AND any "
+                        "decline description that just says 'declined by the bank' or 'payment failed' "
+                        "with NO mention of downtime, a timeout, or a technical/system error - a bare "
+                        "bank decline with no further detail is not something a blind retry fixes. "
+                        "These are all customer-FIXABLE, not unrecoverable and not a reason to wait.\n"
+                        "3. decline_source is 'network', 'gateway', or 'bank' AND the description "
+                        "ITSELF explicitly names a technical/system problem - the words timeout, "
+                        "downtime, or technical error, not just 'declined' or 'failed' -> "
+                        "'immediate_retry'. Do NOT apply this rule just because decline_source is "
+                        "'bank' - a bank-sourced decline with no infra language in its description is "
+                        "rule 2, not this rule.\n"
+                        "4. decline_source is 'customer' AND the description is specifically about "
+                        "available funds or a transaction/spending limit (not authentication, not the "
+                        "card itself) -> 'delayed_retry' (give it time to clear, e.g. next payday).\n"
                         "5. ONLY if the customer explicitly cancelled/walked away, or the bank has "
                         "permanently blocked/closed the instrument with no customer fix available -> "
                         "'no_action_unrecoverable'. Do NOT use this for a merely expired, disabled, "
                         "inactive, or wrong-CVV card - those are rule 2.\n\n"
-                        "Worked examples: card_expired -> payment_link_nudge (customer supplies a new "
-                        "card, not unrecoverable). payment_timed_out, source=network -> immediate_retry "
-                        "(infra failure, nobody's fault). insufficient_funds, source=customer -> "
-                        "delayed_retry (funds issue, may clear with time). customer cancelled the "
-                        "transaction -> no_action_unrecoverable."
+                        "Worked examples, including corrections of common mistakes: card_expired -> "
+                        "payment_link_nudge (customer supplies a new card, not unrecoverable). "
+                        "payment_timed_out, source=network, description mentions exceeding a time "
+                        "limit -> immediate_retry (explicit infra language). card_declined, "
+                        "source=bank, description just says 'declined by the bank' with NO infra "
+                        "language -> payment_link_nudge, NOT immediate_retry (bank source alone is "
+                        "not enough for rule 3). authentication_failed, 'incorrect OTP entry' -> "
+                        "payment_link_nudge, NOT delayed_retry (a failed authentication is "
+                        "customer-actionable right now, not a funds/limit issue to wait out). "
+                        "insufficient_funds, source=customer, about funds -> delayed_retry. customer "
+                        "cancelled the transaction -> no_action_unrecoverable."
                     ),
                 },
                 "reasoning": {

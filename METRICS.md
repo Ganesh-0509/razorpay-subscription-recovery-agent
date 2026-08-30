@@ -122,8 +122,32 @@ a different failure mode entirely — a genuine example of a fix changing
 *which* failure mode dominates, not just how much failure there is.
 
 **Net result:** a large, real improvement (46%→22% override rate) with an
-honestly-disclosed new failure surface on 3 of 15 codes, left unfixed in
-this pass rather than iterated on further or hidden.
+honestly-disclosed new failure surface on 3 of 15 codes.
+
+### 2.3 Third fix — targeted validation, not yet a full re-run
+
+The 3-code regression above was diagnosed precisely (re-checked against
+`config/decline_policy.json` directly, not assumed): `authentication_failed`
+is `decline_source: customer`, not `bank` — so it was falling through to
+rule 4's "customer + funds/limit issue" bucket despite not being about
+funds at all, while `card_declined`/`payment_failed` (`decline_source: bank`,
+generic "declined by the bank" descriptions with no infra language) were
+over-matching rule 3's "bank source → infra failure → retry immediately"
+clause on source alone.
+
+`ollama_client.py`'s tool schema was rewritten a third time with explicit
+negative-contrast examples naming these exact codes (e.g. "card_declined
+… → payment_link_nudge, NOT immediate_retry — bank source alone is not
+enough for rule 3"). **Validated by directly calling `propose_action()`
+on all 33 previously-affected records** (not the full 150 — a targeted
+re-check, done to get a fast signal before committing to another ~2-hour
+batch run): **33/33 matched policy (100%)**, up from the mixed 6%/0%/0%
+match rates in Run 3. This is real, run-produced evidence for this
+specific subset, not a projection — but it is not yet a new official
+150-record number, since the other 117 records (already at 100% in Run 3)
+haven't been re-verified against this third prompt version. A full Run 4
+would be needed to confirm the aggregate figure and rule out any
+regression on codes that were already correct.
 
 ---
 
