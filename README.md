@@ -39,10 +39,13 @@ pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
   construction, so `RESULTS.md`'s "hard-blocked: 0" proves the check
   passes in isolation (`tests/test_gate.py`), not that it's been
   triggered under real batch conditions.
-- **Simulate-mode is the only path that has processed all 150 records so
-  far.** The official-MCP-server integration is implemented and its tool
-  schemas verified live, but a real end-to-end call with real test-mode
-  keys is still pending — see `BUILD_LOG.md` §12 for the full list.
+- **Simulate mode is still the default and the only path that has
+  processed all 150 records.** The official-MCP-server integration has
+  now also been verified end-to-end with real test-mode keys on a smaller
+  sample (`real_mcp_demo.py`, `REAL_MCP_RESULTS.md`) — real orders and
+  payment links, `simulated: false` — but the full batch still runs
+  simulated by default so the repo works for anyone without a Razorpay
+  account.
 
 Full project docs: [`BUILD_LOG.md`](BUILD_LOG.md) (problem statement, every
 technical decision with reasoning, architecture, protocol, gate design,
@@ -116,6 +119,12 @@ image `mcp/razorpay`) instead of a hand-rolled SDK wrapper — see
 `razorpay_mcp_client.py` and `BUILD_LOG.md` §2.2. Its full tool list was checked
 directly and has no Route/transfer tools, so the Route stretch goal below
 still goes through our own SDK wrapper.
+
+**Verified live, not just implemented:** `real_mcp_demo.py` runs a small,
+decline-code-diverse sample end-to-end through the real official server
+with real keys — see [`REAL_MCP_RESULTS.md`](REAL_MCP_RESULTS.md) for the
+actual Razorpay test-mode object IDs it created (`order_...`, `plink_...`,
+all `simulated: false`).
 
 ## Stretch goal: Route (split settlement)
 
