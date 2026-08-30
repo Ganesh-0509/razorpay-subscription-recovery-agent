@@ -10,7 +10,7 @@ This file reports it honestly as simulated throughout.
 - Total value of halted subscriptions: **Rs 150,729.35**
 - Actions executed (retries/nudges the gate let through): **143**
 - Simulated recovered amount: **Rs 54,362.43** (50/143 executed actions 'succeeded' in simulation)
-- LLM proposals the gate had to override (policy mismatch): **69/150** (46% - the gate, not the model, is what makes this safe)
+- LLM proposals the gate had to override (policy mismatch): **33/150** (22% - the gate, not the model, is what makes this safe)
 - Hard-blocked by gate (spending cap / duplicate): **0**
 - Correctly refused as fraud-flagged (never retried): **1**
 - Correctly identified as unrecoverable (no action taken): **6**

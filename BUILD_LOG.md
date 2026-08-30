@@ -148,7 +148,7 @@ Section 2 already flagged the tension the whole design resolves: an LLM is usefu
 | **Proposal path** (untrusted by design) | Ollama model, `record_decision` tool call, LLM's own stated reasoning | **None.** The LLM never calls a real money-moving tool directly — it can only propose a structured decision that the gate then reviews. |
 | **Execution path** (deterministic, trusted) | Gate (policy/cap/idempotency checks) → MCP server → (official Razorpay MCP server or simulate mode) | **All of it.** Nothing reaches Razorpay's API without passing through the gate first. |
 
-**Why this split matters for judging:** it turns "why do you need a separate gate, why not just prompt the model better" from a rhetorical question into a number sitting in `RESULTS.md` — 46% of the model's proposals were wrong even *after* fixing a real prompt-clarity bug (§9, §12). The gate isn't decorative.
+**Why this split matters for judging:** it turns "why do you need a separate gate, why not just prompt the model better" from a rhetorical question into a number sitting in `RESULTS.md` — 22% of the model's proposals were still wrong even *after* two rounds of fixing real prompt bugs (§9, §12), and the second fix's own side effects (§9.2) are exactly the kind of thing a prompt alone can never self-certify. The gate isn't decorative.
 
 **The mechanism that makes this true, not just asserted:** the MCP tools themselves (`mcp_server.py`) contain zero policy logic — they execute exactly what they're told, honestly. The only thing standing between "LLM proposed something" and "money moved" is `agent.py`'s discipline in calling those tools *only* after `gate.evaluate(...).execute` is `True`. This is deliberately a single, auditable enforcement point rather than logic scattered across multiple layers — see §12 for the honest tradeoff this creates.
 
@@ -420,17 +420,24 @@ Noted here honestly as future scope, not built: the natural next step is exactly
 
 ### 9.2 Real metrics from real runs — not projected, not hypothetical
 
-| Metric | First full run (schema bug present) | After the schema-clarity fix |
-|---|---|---|
-| Subscriptions processed | 150/150 | 150/150 |
-| Actions executed | 145 | 143 |
-| Simulated recovered amount | ₹1,25,156.53 | ₹54,362.43 (of ₹1,50,729.35 total) |
-| **LLM proposals overridden by the gate** | **87% (131/150)** | **46% (69/150)** |
-| Correctly refused as fraud | 1/1 real fraud case | 1/1 real fraud case |
-| Correctly refused as unrecoverable | 4 | 6 |
-| Hard-blocked (spending cap/duplicate) | 0 | 0 |
+| Metric | Run 1 (schema bug present) | Run 2 (after schema-clarity fix) | Run 3 (after the ordered-decision-rule fix) |
+|---|---|---|---|
+| Subscriptions processed | 150/150 | 150/150 | 150/150 |
+| Actions executed | 145 | 143 | 143 |
+| Simulated recovered amount | ₹1,25,156.53 | ₹54,362.43 | ₹54,362.43 (of ₹1,50,729.35 total) |
+| **LLM proposals overridden by the gate** | **87% (131/150)** | **46% (69/150)** | **22% (33/150)** |
+| Correctly refused as fraud | 1/1 | 1/1 | 1/1 |
+| Correctly refused as unrecoverable | 4 | 6 | 6 |
+| Hard-blocked (spending cap/duplicate) | 0 | 0 | 0 |
 
-The 87%→46% delta across the exact same 150-record dataset, with only the tool schema's clarity changed, is the strongest single piece of evidence in this project: it's a measured before/after of *diagnosing and fixing why a model was failing*, not just noticing that it was.
+Run 2→3 is the second, independently-diagnosed fix (`METRICS.md` §2, full diagnosis in the session that found two systematic biases beyond the original schema-clarity bug): an ordered decision rule plus worked examples added to the tool schema. Every one of the original bias clusters — `card_expired` (15%→100%), `card_disabled_for_online_payments` (0%→100%), `payment_timed_out` (0%→100%), `gateway_technical_error` (50%→100%), `bank_technical_error` (86%→100%), `incorrect_cvv` (88%→100%), `debit_instrument_inactive` (33%→100%), `transaction_limit_exceeded` (80%→100%) — hit exactly 100% match rate.
+
+**Said plainly, because it's real and the run data shows it: the fix also made three codes measurably worse**, verified directly against `logs/audit_log.jsonl`, not glossed over:
+- `authentication_failed`: 35%→6% (16/17 wrong, all proposing `delayed_retry` instead of `payment_link_nudge`)
+- `card_declined`: 9%→0% (proposing `immediate_retry`/`delayed_retry` instead of `payment_link_nudge`)
+- `payment_failed`: 20%→0% (proposing `immediate_retry` instead of `payment_link_nudge`)
+
+All three share `decline_source: bank` or `customer` alongside wording that reads, to the model, like an infrastructure failure or a funds problem rather than "the customer must act." The most likely cause: rule 3 in the reworded schema (`ollama_client.py`) says a `bank`-source decline that's "a system/infrastructure failure" should retry immediately — the model is applying that to *any* bank-sourced decline, not just ones actually described as downtime/timeout, so a generic "declined by the customer's bank" reads as an infra failure to it. This wasn't caught before the run because the original diagnosis (`METRICS.md` §2.2) was built entirely from Run 2's confusion data, which didn't have this failure mode since Run 2's rule set was different — a real example of a fix introducing a new, different failure surface, found only by actually re-running the batch rather than assuming the fix worked. Not corrected in this pass — the net result (46%→22% override rate) is still a large, real improvement, and this asymmetry is left here as an accurate record rather than a fixed-and-hidden footnote.
 
 ### 9.3 Route stretch-goal results (`ROUTE_RESULTS.md`)
 
@@ -438,7 +445,7 @@ The 87%→46% delta across the exact same 150-record dataset, with only the tool
 
 ### 9.4 Consistency check (run against the actual log files, not assumed)
 
-150 `gate_decision` events, 150 `mcp_tool_call` events, 150 checkpoint lines, 150 records in `RESULTS.md` — verified 1:1 across all four artifacts after both full runs.
+150 `gate_decision` events, 150 `mcp_tool_call` events, 150 checkpoint lines, 150 records in `RESULTS.md` — verified 1:1 across all four artifacts after all three full runs, including Run 3, which was itself genuinely killed mid-batch (124/150) and resumed cleanly — see `METRICS.md`'s run-identity note for the exact timestamps.
 
 ---
 
@@ -446,10 +453,10 @@ The 87%→46% delta across the exact same 150-record dataset, with only the tool
 
 Five minutes, ordered for maximum impact in a short judging window:
 
-1. **Open with the number, not the pitch (0:00–0:45).** State the T+3/halted gap directly from Razorpay's own docs, then cut straight to `RESULTS.md`: 150 halted subscriptions processed, real recovery numbers, and the headline finding — the gate overrode 46% of the model's proposals. Lead with evidence, not framing.
+1. **Open with the number, not the pitch (0:00–0:45).** State the T+3/halted gap directly from Razorpay's own docs, then cut straight to `RESULTS.md`: 150 halted subscriptions processed, real recovery numbers, and the headline finding — the gate overrode 22% of the model's proposals (down from an original 87%, across two diagnosed-and-fixed rounds — §9.2). Lead with evidence, not framing.
 2. **Show the architecture in 60 seconds (0:45–1:45).** The two-path diagram (§3.5): proposal path (untrusted LLM) vs. execution path (gate, then Razorpay's own official MCP server or simulate mode). One sentence each on why the LLM never touches a money tool directly.
 3. **Live replay of one fraud case (1:45–2:45).** Pull the exact `payment_risk_check_failed` record from `audit_log.jsonl` and read the gate's decision aloud — this is the rubric's "one failure handled gracefully," happening on camera from a real log line, not staged. Optionally follow it with `python agent.py --inject-failure llm_parse_failure` to trigger the *other* failure path (the model returning no usable tool call) live, on demand, instead of only pointing at history.
-4. **The bug story (2:45–3:45).** Show the 87%→46% table (§9.2) and explain *why*: the tool schema didn't explain what `no_action_fraud` meant, the model was reading it as "no action needed," fixed by spelling out each option explicitly. This is the single strongest "I can debug my own system" moment in the whole demo.
+4. **The bug story (2:45–3:45).** Show the 87%→46%→22% table (§9.2) and explain *why*, twice: the first fix spelled out what `no_action_fraud` meant after the model was reading it as "no action needed"; the second added an ordered decision rule after two more systematic biases were found. Then say the honest part out loud — the second fix also made three decline codes measurably worse, found by actually re-running the batch, not assumed away. This is the single strongest "I can debug my own system, including my own fixes" moment in the whole demo.
 5. **Close with what's real, not hypothetical (3:45–5:00).** Route stretch goal: show the deliberately oversized transfer getting blocked by the same gate, live. Close on: "the money-moving tools call Razorpay's own official MCP server, the same one Agent Studio is built on — this isn't a demo of the idea, it's a small, honest version of the real thing."
 
 ---
@@ -472,7 +479,7 @@ Remaining: pitch video recording, final README pass, application form submission
 - **Test coverage gap, partially closed.** `gate.py`, `decline_codes.py`, and now `ollama_client.py`'s no-tool-call/malformed-arguments/retry-exhaustion paths (D4, D8 in §7.3) all have dedicated, mocked unit tests — 19 total, no live Ollama server needed, so they run in CI. Still not covered by a repeatable test: `generate_data.py`'s distribution logic and the checkpoint/resume logic (D9) — both validated empirically by the real runs, not by a test.
 - **Resolved:** the official-MCP-server path has now been exercised end-to-end with real `rzp_test_` keys — `real_mcp_demo.py` ran 5 records through it, producing real Razorpay test-mode objects (`order_TVya2xkz293ced`, `plink_TVyaB1NfbPJerN`, etc. — full list in `REAL_MCP_RESULTS.md`). The main 150-record pipeline still runs in simulate mode by default (that's the reproducible path anyone cloning the repo gets without creating an account), but the integration claim is now demonstrated, not just asserted.
 - **Route uses a labeled simulated Linked Account ID** (`acc_sim_partner001`) since onboarding a real one is a manual Razorpay-dashboard step outside this codebase's control.
-- **The 46% override rate got a second pass.** An independent diagnosis found two more systematic biases beyond the original `no_action_fraud` schema-clarity bug — the model was reading customer-fixable card issues (expired, disabled, wrong CVV) as unrecoverable, and defaulting to "wait and retry" for technical/bank failures regardless of `decline_source`. The tool schema in `ollama_client.py` was reworded with an ordered decision rule and worked examples to target both directly (full diagnosis and exact confusion counts in `METRICS.md` §2). A full 150-record re-run against the fix is in progress as of this writing — this section will be updated with the actual before/after number once it completes, not a projected one.
+- **Resolved: the 46% override rate got a second pass, with a real, mixed result.** An independent diagnosis found two more systematic biases beyond the original `no_action_fraud` schema-clarity bug — the model was reading customer-fixable card issues (expired, disabled, wrong CVV) as unrecoverable, and defaulting to "wait and retry" for technical/bank failures regardless of `decline_source`. The tool schema in `ollama_client.py` was reworded with an ordered decision rule and worked examples to target both. A full 150-record re-run confirmed a large net improvement — **46%→22% override rate**, every original bias cluster now at 100% match — but also introduced a new one: `authentication_failed`, `card_declined`, and `payment_failed` got measurably *worse* (full numbers and root-cause theory in §9.2). Left uncorrected in this pass and documented plainly rather than hidden, since the net result is still a large real improvement and the point being demonstrated (this project can diagnose its own model's failures with real data, including a fix's side effects) survives either way.
 - **Deadline is confirmed but scope is explicitly not being cut for it (§11)** — if time genuinely runs short near 5 September, the Route stretch goal (already complete) is the safe thing to have built early, since it was always the first candidate to cut if needed and instead got finished.
 
 ---
