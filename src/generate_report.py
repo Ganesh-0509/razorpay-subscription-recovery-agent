@@ -8,6 +8,7 @@ as raw JSONL. Re-run any time after a batch run to refresh it.
 Usage: python generate_report.py
 """
 
+import html
 import json
 from pathlib import Path
 
@@ -24,9 +25,15 @@ def _load_events() -> list[dict]:
 
 def _bar(label: str, value: int, max_value: int, color: str) -> str:
     pct = (value / max_value * 100) if max_value else 0
+    # decline_code/final_action are a small fixed enum today, but this is
+    # a cheap, zero-downside defense-in-depth escape regardless - HTML is
+    # built by string interpolation here, not a templating engine with
+    # auto-escaping, so nothing else protects against a value containing
+    # HTML-special characters if that ever changes.
+    safe_label = html.escape(str(label))
     return (
         f'<div class="bar-row">'
-        f'<span class="bar-label">{label}</span>'
+        f'<span class="bar-label">{safe_label}</span>'
         f'<div class="bar-track"><div class="bar-fill" style="width:{pct:.1f}%;background:{color}"></div></div>'
         f'<span class="bar-value">{value}</span>'
         f"</div>"
@@ -67,9 +74,10 @@ def build_report():
     for code, c in sorted(by_code.items(), key=lambda kv: -kv[1]["total"]):
         rate = c["matched"] / c["total"] * 100
         color = "#2ea043" if rate >= 70 else "#d29922" if rate >= 40 else "#f85149"
+        safe_code = html.escape(str(code))
         code_rows += (
-            f'<tr data-code="{code}">'
-            f"<td>{code}</td><td>{c['total']}</td><td>{c['matched']}</td>"
+            f'<tr data-code="{safe_code}">'
+            f"<td>{safe_code}</td><td>{c['total']}</td><td>{c['matched']}</td>"
             f"<td>{c['total'] - c['matched']}</td>"
             f'<td><span class="pill" style="background:{color}22;color:{color}">{rate:.0f}%</span></td>'
             f"</tr>"
@@ -84,7 +92,7 @@ def build_report():
         for code, c in sorted(by_code.items(), key=lambda kv: -kv[1]["total"])
     )
 
-    html = f"""<!doctype html>
+    page_html = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Subscription Recovery Agent - Report</title>
 <style>
   body {{ font: 14px/1.5 -apple-system, Segoe UI, sans-serif; background:#0d1117; color:#c9d1d9; margin:0; padding:32px; }}
@@ -151,7 +159,7 @@ def build_report():
 </script>
 </body></html>
 """
-    REPORT_PATH.write_text(html, encoding="utf-8")
+    REPORT_PATH.write_text(page_html, encoding="utf-8")
     print(f"Wrote {REPORT_PATH} ({total} gate decisions as of this generation)")
 
 
