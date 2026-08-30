@@ -63,6 +63,18 @@ def test_gate_hard_blocks_duplicate_action_same_run():
     assert not second.execute
 
 
+def test_gate_executes_unrecoverable_no_action_policy_even_if_llm_disagrees():
+    # D3 (BUILD_LOG §7.3): a policy-mandated no-action (customer cancelled,
+    # instrument permanently blocked) must still "execute" (i.e. correctly
+    # do nothing) regardless of what the LLM proposed, and must never be
+    # confused with a hard block (execute=False) - refusing IS the action.
+    gate = Gate()
+    decision = gate.evaluate("sub_7", "payment_cancelled", RecoveryAction.DELAYED_RETRY, 29900)
+    assert not decision.llm_matched_policy
+    assert decision.execute
+    assert decision.final_action == RecoveryAction.NO_ACTION_UNRECOVERABLE
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0

@@ -163,14 +163,18 @@ python agent.py            # runs the full pipeline, writes RESULTS.md and logs/
 ## Tests
 
 ```bash
-python tests/test_gate.py
-python tests/test_decline_codes.py
+python -m pytest tests/ -v   # 19 tests, no Ollama server or real keys needed
 ```
 
 The gate has unit tests independent of the LLM — it must be correct even
 when the model isn't, since that's the entire point of having it. The
-decline-code policy table is tested separately: if that table is wrong,
-the gate enforces the wrong thing with total confidence.
+decline-code policy config is tested separately: if it's wrong (or a
+merchant typos an edit), the gate must refuse to load it rather than
+enforce the wrong thing with total confidence.
+`tests/test_ollama_client.py` mocks the Ollama HTTP calls directly to
+exercise the failure paths that actually happened during development — no
+tool call, malformed arguments, a transient failure that retries and
+recovers, and retries fully exhausted without crashing the caller.
 
 ## What broke during development
 
