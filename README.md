@@ -53,26 +53,31 @@ running example throughout) ·
 [`METRICS.md`](METRICS.md) (every number verified directly against the raw
 audit log, including the LLM's exact error patterns)
 
-## The policy is one editable table, not a black box
+## The policy is one editable config file, not a black box
 
-A merchant doesn't need to retrain anything to change how a decline code is
-handled — `src/decline_codes.py` is a plain Python dict. For example, to
-stop nudging expired cards with a payment link and switch to an immediate
-retry instead, the entire change is:
+A merchant doesn't need to retrain anything, touch Python, or redeploy to
+change how a decline code is handled — the entire policy lives in
+[`config/decline_policy.json`](config/decline_policy.json), loaded fresh
+at startup. For example, to stop nudging expired cards with a payment
+link and switch to an immediate retry instead, the entire change is:
 
 ```diff
-     "card_expired": DeclineCode(
-         "card_expired",
-         "Customer's card has passed its expiration date",
-         DeclineSource.CUSTOMER,
--        RecoveryAction.PAYMENT_LINK_NUDGE,
-+        RecoveryAction.IMMEDIATE_RETRY,
-         0.35,
-     ),
+   "card_expired": {
+     "description": "Customer's card has passed its expiration date",
+     "source": "customer",
+-    "allowed_action": "payment_link_nudge",
++    "allowed_action": "immediate_retry",
+     "simulated_success_rate": 0.35
+   },
 ```
 
-`tests/test_decline_codes.py` and the gate's own unit tests still pass
-unchanged — the policy table and the enforcement code are fully decoupled.
+A typo here (e.g. `"allowed_aciton"` or an unrecognized action name) fails
+loudly at startup with a specific error naming the bad code and field —
+see `test_config_typo_in_allowed_action_fails_loudly` in
+`tests/test_decline_codes.py` — rather than silently loading a policy the
+gate then enforces with total confidence. All of `tests/test_decline_codes.py`
+and the gate's own unit tests still pass unchanged — the policy data and
+the enforcement code are fully decoupled.
 
 ## Architecture
 

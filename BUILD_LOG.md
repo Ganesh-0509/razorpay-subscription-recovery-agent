@@ -61,7 +61,7 @@
 
 - **Mechanism:** their agent recovers subscriptions by placing a personalized voice call to the subscriber (English/Hindi, built on ElevenLabs), alongside smarter retry logic. This project uses payment links and automated retries — no voice channel. Different mechanism, same underlying problem.
 - **Audit trail:** their own guardrails write-up describes merchants seeing "what the agent did, when, and why" through a performance dashboard — a hosted summary. Nothing publicly describes an exportable, per-decision structured log. This project's `audit_log.jsonl` is a raw, `grep`-able line per decision, carrying the LLM's proposed action *and* its reasoning *and* the gate's override reason side by side — inspectable by anyone with a text editor, not just through a UI.
-- **Guardrail transparency:** their agents go through an internal Razorpay certification/validation process before going live — real, but closed; a merchant doesn't see the policy logic itself. This project's entire recovery policy is one human-readable table (`decline_codes.py`) mapping each real Razorpay decline code to exactly one allowed action — a merchant (or an interviewer) can read the whole thing in under a minute, and change one row without retraining anything.
+- **Guardrail transparency:** their agents go through an internal Razorpay certification/validation process before going live — real, but closed; a merchant doesn't see the policy logic itself. This project's entire recovery policy is one human-readable JSON file (`config/decline_policy.json`) mapping each real Razorpay decline code to exactly one allowed action — a merchant (or an interviewer) can read the whole thing in under a minute, and change one row with no Python change and no redeploy (§6.1).
 - **Access:** their product is currently rolled out through a sales-assisted early-access signup, with no publicized self-serve tier. This project runs today, for $0, with a personal Razorpay test-mode account — no waitlist.
 
 **The actual point of this project, stated honestly:** not "this beats Razorpay's agent" — it doesn't, and claiming otherwise would be the wrong pitch against a shipped, voice-integrated production feature with real merchant adoption. The point is to prove the underlying pattern — separating an LLM's *proposal* authority from a deterministic system's *execution* authority, enforcing hard spending caps and idempotency, and producing a real audit trail — can be understood, implemented, and defended from first principles by one engineer in a week. That is the actual thing a recruiting buildathon judged by Razorpay's own engineers is testing for.
@@ -315,7 +315,9 @@ Policy matching resolves *what should happen* for a given decline code. Spending
 
 ## 6. Recovery Action Policy — Detailed Design
 
-### 6.1 The table (`decline_codes.py`)
+### 6.1 The table (`config/decline_policy.json`, loaded by `decline_codes.py`)
+
+**Moved out of Python and into an external JSON config** (after the initial build) so the actual differentiation claim in §1.1 — "a merchant can edit this without touching code" — is literally true, not just true in spirit. `decline_codes.py` now only loads and validates the file: an invalid `source` or `allowed_action` value raises immediately with the specific code/field at fault (`test_config_typo_in_allowed_action_fails_loudly`, `test_config_typo_in_source_fails_loudly`), rather than silently loading a broken policy the gate would then enforce with total confidence.
 
 Every decline code Razorpay documents for card payments (razorpay.com/docs/errors/payments/cards/) maps to exactly one `RecoveryAction`:
 

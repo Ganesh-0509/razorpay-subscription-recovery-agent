@@ -1,0 +1,99 @@
+{
+  "_comment": "Recovery policy for real Razorpay decline codes (razorpay.com/docs/errors/payments/cards/). A merchant edits this file directly - no Python change, no redeploy - to change how a decline code is handled. See decline_codes.py for the enum values allowed_action and source may take, and the ordered decision rule the LLM is given in src/ollama_client.py.",
+  "insufficient_funds": {
+    "description": "The customer's bank account did not have enough funds",
+    "source": "customer",
+    "allowed_action": "delayed_retry",
+    "simulated_success_rate": 0.55
+  },
+  "card_expired": {
+    "description": "Customer's card has passed its expiration date",
+    "source": "customer",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.35
+  },
+  "card_not_enrolled": {
+    "description": "Card lacks activation for digital transactions",
+    "source": "bank",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.30
+  },
+  "card_disabled_for_online_payments": {
+    "description": "Card not enabled for online transaction use",
+    "source": "customer",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.30
+  },
+  "incorrect_cvv": {
+    "description": "The customer entered an incorrect CVV",
+    "source": "customer",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.45
+  },
+  "authentication_failed": {
+    "description": "Incorrect OTP entry or browser closure during verification",
+    "source": "customer",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.40
+  },
+  "debit_instrument_blocked": {
+    "description": "Card blocked by customer or bank",
+    "source": "bank",
+    "allowed_action": "no_action_unrecoverable",
+    "simulated_success_rate": 0.0
+  },
+  "debit_instrument_inactive": {
+    "description": "Card not activated for online use",
+    "source": "bank",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.25
+  },
+  "transaction_limit_exceeded": {
+    "description": "The customer has already reached the maximum transaction limit for the day",
+    "source": "customer",
+    "allowed_action": "delayed_retry",
+    "simulated_success_rate": 0.60
+  },
+  "payment_timed_out": {
+    "description": "The payment could not be completed as the customer exceeded the time limit",
+    "source": "network",
+    "allowed_action": "immediate_retry",
+    "simulated_success_rate": 0.50
+  },
+  "gateway_technical_error": {
+    "description": "Partner bank downtime prevented payment processing",
+    "source": "gateway",
+    "allowed_action": "immediate_retry",
+    "simulated_success_rate": 0.65
+  },
+  "bank_technical_error": {
+    "description": "Customer's bank experienced downtime",
+    "source": "bank",
+    "allowed_action": "immediate_retry",
+    "simulated_success_rate": 0.60
+  },
+  "card_declined": {
+    "description": "The payment was declined by the customer's bank",
+    "source": "bank",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.25
+  },
+  "payment_risk_check_failed": {
+    "description": "The customer's bank declined the payment, citing it as fraudulent",
+    "source": "bank",
+    "allowed_action": "no_action_fraud",
+    "simulated_success_rate": 0.0
+  },
+  "payment_cancelled": {
+    "description": "Customer terminated the transaction or navigated away during processing",
+    "source": "customer",
+    "allowed_action": "no_action_unrecoverable",
+    "simulated_success_rate": 0.0
+  },
+  "payment_failed": {
+    "description": "The payment was declined by the customer's bank",
+    "source": "bank",
+    "allowed_action": "payment_link_nudge",
+    "simulated_success_rate": 0.20
+  }
+}

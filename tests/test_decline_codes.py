@@ -5,12 +5,14 @@ enforces the wrong thing with total confidence, which is worse than no
 gate at all.
 """
 
+import json
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from decline_codes import DECLINE_CODES, RecoveryAction, get_decline_code
+from decline_codes import DECLINE_CODES, RecoveryAction, _load_decline_codes, get_decline_code
 
 
 def test_every_code_has_a_valid_recovery_action():
@@ -42,6 +44,45 @@ def test_unknown_code_raises_keyerror():
         assert False, "expected KeyError"
     except KeyError:
         pass
+
+
+def _write_and_load(entry: dict):
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        json.dump({"bad_code": entry}, f)
+        path = Path(f.name)
+    try:
+        return _load_decline_codes(path)
+    finally:
+        path.unlink()
+
+
+def test_config_typo_in_allowed_action_fails_loudly():
+    # A merchant editing config/decline_policy.json by hand can typo an
+    # enum value - this must raise immediately, never silently load a
+    # policy the gate then enforces with total confidence.
+    try:
+        _write_and_load({
+            "description": "test",
+            "source": "customer",
+            "allowed_action": "retry_whenever_i_feel_like_it",
+            "simulated_success_rate": 0.5,
+        })
+        assert False, "expected ValueError for invalid allowed_action"
+    except ValueError as e:
+        assert "allowed_action" in str(e)
+
+
+def test_config_typo_in_source_fails_loudly():
+    try:
+        _write_and_load({
+            "description": "test",
+            "source": "the_moon",
+            "allowed_action": "delayed_retry",
+            "simulated_success_rate": 0.5,
+        })
+        assert False, "expected ValueError for invalid source"
+    except ValueError as e:
+        assert "source" in str(e)
 
 
 if __name__ == "__main__":

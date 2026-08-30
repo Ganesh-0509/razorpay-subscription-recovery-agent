@@ -2,6 +2,14 @@
 Real Razorpay card decline codes (razorpay.com/docs/errors/payments/cards/)
 and the recovery policy we apply to each one.
 
+The actual policy data lives in config/decline_policy.json, not here - a
+merchant changes how a decline code is handled by editing that JSON file
+directly, with no Python change and no redeploy. This module only loads
+it, validates every entry against the two enums below, and exposes the
+same DECLINE_CODES dict / get_decline_code() interface every caller
+(agent.py, gate.py, generate_data.py) already depends on, so the swap from
+a hardcoded dict to an external file is invisible to everything else.
+
 This table is the deterministic ground truth. The agent's LLM proposes an
 action per subscription, but the gate (see gate.py) checks every proposal
 against ALLOWED_ACTIONS here and overrides anything out of policy. The LLM
@@ -17,8 +25,12 @@ RecoveryAction values:
   NO_ACTION_UNRECOVERABLE - customer-cancelled or blocked; nothing to do
 """
 
+import json
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+
+POLICY_PATH = Path(__file__).parent.parent / "config" / "decline_policy.json"
 
 
 class RecoveryAction(str, Enum):
@@ -48,120 +60,44 @@ class DeclineCode:
     simulated_success_rate: float
 
 
-DECLINE_CODES: dict[str, DeclineCode] = {
-    "insufficient_funds": DeclineCode(
-        "insufficient_funds",
-        "The customer's bank account did not have enough funds",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.DELAYED_RETRY,
-        0.55,
-    ),
-    "card_expired": DeclineCode(
-        "card_expired",
-        "Customer's card has passed its expiration date",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.35,
-    ),
-    "card_not_enrolled": DeclineCode(
-        "card_not_enrolled",
-        "Card lacks activation for digital transactions",
-        DeclineSource.BANK,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.30,
-    ),
-    "card_disabled_for_online_payments": DeclineCode(
-        "card_disabled_for_online_payments",
-        "Card not enabled for online transaction use",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.30,
-    ),
-    "incorrect_cvv": DeclineCode(
-        "incorrect_cvv",
-        "The customer entered an incorrect CVV",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.45,
-    ),
-    "authentication_failed": DeclineCode(
-        "authentication_failed",
-        "Incorrect OTP entry or browser closure during verification",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.40,
-    ),
-    "debit_instrument_blocked": DeclineCode(
-        "debit_instrument_blocked",
-        "Card blocked by customer or bank",
-        DeclineSource.BANK,
-        RecoveryAction.NO_ACTION_UNRECOVERABLE,
-        0.0,
-    ),
-    "debit_instrument_inactive": DeclineCode(
-        "debit_instrument_inactive",
-        "Card not activated for online use",
-        DeclineSource.BANK,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.25,
-    ),
-    "transaction_limit_exceeded": DeclineCode(
-        "transaction_limit_exceeded",
-        "The customer has already reached the maximum transaction limit for the day",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.DELAYED_RETRY,
-        0.60,
-    ),
-    "payment_timed_out": DeclineCode(
-        "payment_timed_out",
-        "The payment could not be completed as the customer exceeded the time limit",
-        DeclineSource.NETWORK,
-        RecoveryAction.IMMEDIATE_RETRY,
-        0.50,
-    ),
-    "gateway_technical_error": DeclineCode(
-        "gateway_technical_error",
-        "Partner bank downtime prevented payment processing",
-        DeclineSource.GATEWAY,
-        RecoveryAction.IMMEDIATE_RETRY,
-        0.65,
-    ),
-    "bank_technical_error": DeclineCode(
-        "bank_technical_error",
-        "Customer's bank experienced downtime",
-        DeclineSource.BANK,
-        RecoveryAction.IMMEDIATE_RETRY,
-        0.60,
-    ),
-    "card_declined": DeclineCode(
-        "card_declined",
-        "The payment was declined by the customer's bank",
-        DeclineSource.BANK,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.25,
-    ),
-    "payment_risk_check_failed": DeclineCode(
-        "payment_risk_check_failed",
-        "The customer's bank declined the payment, citing it as fraudulent",
-        DeclineSource.BANK,
-        RecoveryAction.NO_ACTION_FRAUD,
-        0.0,
-    ),
-    "payment_cancelled": DeclineCode(
-        "payment_cancelled",
-        "Customer terminated the transaction or navigated away during processing",
-        DeclineSource.CUSTOMER,
-        RecoveryAction.NO_ACTION_UNRECOVERABLE,
-        0.0,
-    ),
-    "payment_failed": DeclineCode(
-        "payment_failed",
-        "The payment was declined by the customer's bank",
-        DeclineSource.BANK,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-        0.20,
-    ),
-}
+def _load_decline_codes(path: Path) -> dict[str, DeclineCode]:
+    """
+    Loads and validates config/decline_policy.json. Fails loudly and
+    specifically (which code, which field, why) on a bad edit - a merchant
+    typo in `allowed_action` or `source` must never silently fall through
+    to the gate with an invalid policy, since the gate trusts this table
+    as ground truth.
+    """
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    codes = {}
+    for code, entry in raw.items():
+        if code.startswith("_"):
+            continue  # e.g. "_comment" - not a decline code
+        try:
+            source = DeclineSource(entry["source"])
+        except ValueError:
+            raise ValueError(
+                f"{path.name}: {code!r} has invalid source {entry['source']!r}; "
+                f"must be one of {[s.value for s in DeclineSource]}"
+            )
+        try:
+            allowed_action = RecoveryAction(entry["allowed_action"])
+        except ValueError:
+            raise ValueError(
+                f"{path.name}: {code!r} has invalid allowed_action {entry['allowed_action']!r}; "
+                f"must be one of {[a.value for a in RecoveryAction]}"
+            )
+        codes[code] = DeclineCode(
+            code=code,
+            description=entry["description"],
+            source=source,
+            allowed_action=allowed_action,
+            simulated_success_rate=entry["simulated_success_rate"],
+        )
+    return codes
+
+
+DECLINE_CODES: dict[str, DeclineCode] = _load_decline_codes(POLICY_PATH)
 
 
 def get_decline_code(code: str) -> DeclineCode:
