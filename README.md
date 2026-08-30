@@ -20,12 +20,31 @@ of a dashboard summary. Full reasoning in `BUILD_LOG.md` §1.1.
 
 [studio]: https://razorpay.com/agent-studio/
 
+## Known limitations (said up front, not buried)
+
+- **Single point of enforcement, not defense-in-depth.** The gate is only
+  ever consulted because `agent.py` chooses to call it — the MCP tools
+  themselves have no policy checks of their own. Fine for this project's
+  scope; a real multi-caller production system would need the check moved
+  inside the tool itself.
+- **Idempotency is unit-tested but never exercised at batch scale.** No
+  `subscription_id` repeats in the synthetic 150-record set by
+  construction, so `RESULTS.md`'s "hard-blocked: 0" proves the check
+  passes in isolation (`tests/test_gate.py`), not that it's been
+  triggered under real batch conditions.
+- **Simulate-mode is the only path that has processed all 150 records so
+  far.** The official-MCP-server integration is implemented and its tool
+  schemas verified live, but a real end-to-end call with real test-mode
+  keys is still pending — see `BUILD_LOG.md` §12 for the full list.
+
 Full project docs: [`BUILD_LOG.md`](BUILD_LOG.md) (problem statement, every
 technical decision with reasoning, architecture, protocol, gate design,
 real results — the single source of truth) ·
 [`EASY_EXPLAINER.md`](EASY_EXPLAINER.md) (plain-language walkthrough, one
 running example throughout) ·
-[`GLOSSARY.md`](GLOSSARY.md) (every term used, defined)
+[`GLOSSARY.md`](GLOSSARY.md) (every term used, defined) ·
+[`METRICS.md`](METRICS.md) (every number verified directly against the raw
+audit log, including the LLM's exact error patterns)
 
 ## The policy is one editable table, not a black box
 
