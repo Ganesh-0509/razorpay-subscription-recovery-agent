@@ -199,16 +199,23 @@ unrecoverable), not pattern-matching literal text.
   English, single-reason) are classified correctly.
 - **Doesn't prove:** robustness to decline codes outside this 16-entry
   catalog, ambiguous or multi-reason real-world decline text, non-English
-  text, or genuinely adversarial phrasing — none of that has been tested,
-  because none of it exists in either dataset used so far.
-- **The actual safety net for a genuinely unknown decline code isn't the
-  LLM at all — it's `get_decline_code()`, which raises `KeyError` on any
-  code not in the policy table** (`test_unknown_code_raises_keyerror`)
-  rather than letting the model guess at something it's never seen. A
-  real production version of this agent would need that boundary handled
-  explicitly (route to manual review, not crash) — currently it would
-  crash the batch for one record and be caught by `agent.py`'s per-record
-  try/except, logged as `record_processing_error`, not silently misclassified.
+  text, or genuinely adversarial phrasing — §2.5 below tests exactly this,
+  deliberately, and reports what actually breaks.
+- **Resolved: the unknown-decline-code boundary is now explicit, not
+  incidental.** `get_decline_code()` still raises `KeyError` on any code
+  not in the policy table (`test_unknown_code_raises_keyerror` — that
+  invariant is unchanged and still the right behavior for that function).
+  But `agent.py`'s `process_one()` now checks for this *before* ever
+  calling it: an unrecognized decline code is routed straight to
+  `flag_for_manual_review` with its own `unknown_decline_code` audit
+  event, never reaching the LLM or the gate (there's no policy for either
+  to evaluate against). Previously this fell through to a generic
+  per-record `try/except`, logged as an undifferentiated
+  `record_processing_error` — correct in effect, but indistinguishable
+  from any other kind of crash. Tested directly:
+  `tests/test_agent_unknown_code.py`, 2 tests, verifying both the natural
+  path and the `--inject-failure unknown_decline_code` demo path route to
+  manual review and never produce a `gate_decision` event.
 
 **Bottom line on generalization:** this project has now tested two
 different things, and they answer two different questions. The 150-record

@@ -57,6 +57,49 @@ def _extract_tool_text(call) -> str | None:
 async def process_one(
     client: Client, gate: Gate, audit: AuditLogger, sub: dict, inject_failure: str | None = None
 ) -> dict:
+    # An unrecognized decline code is a real, distinct failure mode from
+    # "the LLM proposed something wrong" - it means this record describes
+    # a situation the policy table has no entry for at all, so there is no
+    # ground truth to gate against and no safe automated action to take.
+    # Previously this fell through to get_decline_code()'s KeyError,
+    # caught only by run()'s generic per-record try/except and logged as
+    # an undifferentiated "record_processing_error" with a silent
+    # no_action_unrecoverable fallback - correct in effect, but
+    # indistinguishable from any other kind of crash and not routed to a
+    # human. Handled explicitly here instead: flagged for manual review
+    # (a human should decide what an unknown code means), not written off
+    # as if it were something already known to be a dead end. Never
+    # reaches the LLM or the gate at all, since neither has anything to
+    # evaluate. See METRICS.md §2.4 and tests/test_agent_unknown_code.py.
+    if inject_failure == "unknown_decline_code" or sub["decline_code"] not in DECLINE_CODES:
+        reason = f"No policy entry for decline_code '{sub['decline_code']}' - needs human review."
+        audit.log(
+            "unknown_decline_code",
+            subscription_id=sub["subscription_id"],
+            decline_code=sub["decline_code"],
+            fallback_action=RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
+        )
+        call = await client.call_tool(
+            "flag_for_manual_review", {"subscription_id": sub["subscription_id"], "reason": reason}
+        )
+        tool_result = _extract_tool_text(call)
+        audit.log(
+            "mcp_tool_call",
+            subscription_id=sub["subscription_id"],
+            tool="flag_for_manual_review",
+            result=tool_result,
+        )
+        return {
+            "subscription_id": sub["subscription_id"],
+            "amount_paise": sub["amount_paise"],
+            "decline_code": sub["decline_code"],
+            "final_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
+            "gate_executed": True,
+            "llm_matched_policy": False,
+            "simulated_customer_response": False,
+            "tool_result": tool_result,
+        }
+
     policy = get_decline_code(sub["decline_code"])
 
     # Deterministic, on-demand version of D4 (BUILD_LOG.md §7.3) for live
@@ -191,13 +234,16 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the subscription recovery agent pipeline.")
     parser.add_argument(
         "--inject-failure",
-        choices=["llm_parse_failure", "llm_invalid_action"],
+        choices=["llm_parse_failure", "llm_invalid_action", "unknown_decline_code"],
         default=None,
         help=(
             "Force the FIRST remaining record down a real graceful-degradation "
             "path (D4, BUILD_LOG.md §7.3) instead of calling Ollama for it - "
             "for demoing 'one failure handled gracefully' live on camera "
-            "instead of pointing at a historical log line. Every other "
+            "instead of pointing at a historical log line. "
+            "'unknown_decline_code' skips the LLM/gate entirely and flags the "
+            "record for manual review, simulating a decline code with no "
+            "policy entry at all. Every other "
             "record in the run is unaffected and calls the real model "
             "normally."
         ),
