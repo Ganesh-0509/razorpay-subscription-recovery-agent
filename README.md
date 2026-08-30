@@ -120,17 +120,21 @@ not copied from prose — full derivation in [`METRICS.md`](METRICS.md).
 |---|---|
 | Halted subscriptions processed | 150/150 |
 | Simulated recovered amount | ₹54,362.43 of ₹1,50,729.35 total |
-| **LLM proposal match rate** | **78.0%** (117/150) — up from 54.0% after fix 1, originally ~13% |
-| LLM proposals the gate had to override | 22.0% (33/150) — down from 87% on the first run |
+| **LLM proposal match rate** | **99.3%** (149/150) — up from 78.0%, 54.0%, originally ~13% across 3 real prompt fixes |
+| LLM proposals the gate had to override | 0.7% (1/150) — down from 87% on the first run |
 | Hard-blocked by gate (cap/duplicate) | 0 in the main pipeline; 1 real block in the Route demo |
 | Real Razorpay objects created (real MCP server, real test keys) | 34 (`REAL_MCP_RESULTS.md` + `RESULTS_ONETIME.md`) |
 
 The override rate isn't a bug to be embarrassed about — it's the
-measured proof a supervisor layer is necessary. Two rounds of real
-prompt-bug diagnosis (full detail in `METRICS.md` §2) took it from 87% to
-22%, and the second fix's own side effects on 3 decline codes are
-documented honestly rather than hidden, because that's the more useful
-signal to a reviewer than a clean-looking number would be.
+measured proof a supervisor layer is necessary, and that stays true even
+as it shrinks. Three rounds of real prompt-bug diagnosis (full detail in
+`METRICS.md` §2) took it from 87% to 46% to 22% to 0.7% — including one
+fix's own side effects on 3 decline codes, found and then fixed in the
+next round, all documented honestly rather than smoothed over. The single
+remaining mismatch (`debit_instrument_blocked`, n=1) is a genuinely
+ambiguous single case, not a pattern. And the gate doesn't retire even at
+0.7%: the spending cap and idempotency checks are properties of the
+money-moving action itself, not of the model's judgment.
 
 ## 5. Visual Proof (No Frontend Needed)
 
@@ -184,11 +188,11 @@ a hosted product. Here's what to actually show instead of a UI:
   `agent_onetime.py` — 34 real objects total), but the full batch still
   runs simulated by default so the repo works for anyone without a
   Razorpay account.
-- **A known, disclosed accuracy regression on 3 decline codes**
-  (`authentication_failed`, `card_declined`, `payment_failed`) — a third
-  schema fix resolved it on a targeted 33-record validation (100% match),
-  but hasn't yet been confirmed with a full 150-record re-run. Full detail
-  in `METRICS.md` §2.3.
+- **Resolved, kept for the record:** an earlier fix regressed 3 decline
+  codes (`authentication_failed`, `card_declined`, `payment_failed`) — a
+  third schema fix resolved all three, confirmed at full 150-record scale
+  (99.3% overall match). Full trajectory across all four runs in
+  `METRICS.md` §2.3.
 
 Full project docs: [`BUILD_LOG.md`](BUILD_LOG.md) (problem statement, every
 technical decision with reasoning, architecture, protocol, gate design,
@@ -310,6 +314,11 @@ Documented in full in `BUILD_LOG.md` §3.6/§12, kept in because it's real:
    decision rule — bringing the rate to 22%, but introducing a new,
    smaller regression on 3 codes, documented rather than hidden
    (`METRICS.md` §2.2).
+6. A third fix targeted that exact regression with negative-contrast
+   examples naming the 3 affected codes — validated first on just those
+   33 records (100%), then confirmed at full 150-record scale with zero
+   side effects on anything else: **99.3% match, 0.7% override rate**
+   (`METRICS.md` §2.3).
 
 ## 12. Further Reading
 

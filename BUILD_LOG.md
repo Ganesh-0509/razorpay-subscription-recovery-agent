@@ -111,7 +111,7 @@ Goal for this section: pick a stack that is **credible as "the same pattern Razo
 
 #### Safety enforcement — a deterministic gate, not LLM self-policing
 **Why:** the track's own rubric requires actions to be "bounded and gated." A small local 8B model cannot be trusted to bound itself — proven, not assumed: on the first real 150-record run, the model's proposals were wrong 87% of the time relative to policy. The gate is plain Python — no model involvement — checking every proposed action against a fixed policy table, a hard spending cap, and an idempotency check before anything is allowed to execute. Full design in §5.
-**Why not prompting-only safety** (e.g., "please never retry a fraud case"): unenforceable by construction — a prompt is a suggestion to a probabilistic system, not a guarantee. The 87%→46% override-rate story (§5, §9) is direct, run-produced evidence for exactly why this matters, not a hypothetical.
+**Why not prompting-only safety** (e.g., "please never retry a fraud case"): unenforceable by construction — a prompt is a suggestion to a probabilistic system, not a guarantee. The 87%→46%→22%→0.7% override-rate story across four real, diagnosed runs (§5, §9) is direct, run-produced evidence for exactly why this matters — and the fact that better prompting *can* drive the override rate down doesn't undercut the point, since the gate's spending-cap and idempotency checks have nothing to do with prompt quality at all.
 
 #### Decline-code policy — a static, human-authored lookup table
 **Why:** every decision needs to be defensible in one sentence to a judge. A static table mapping each of Razorpay's real, documented decline codes (`insufficient_funds`, `card_expired`, `payment_risk_check_failed`, etc. — pulled from razorpay.com/docs/errors/payments/cards/, not invented) to exactly one allowed recovery action is fully auditable and testable in isolation (`tests/test_decline_codes.py`). Full design in §6.
@@ -148,7 +148,7 @@ Section 2 already flagged the tension the whole design resolves: an LLM is usefu
 | **Proposal path** (untrusted by design) | Ollama model, `record_decision` tool call, LLM's own stated reasoning | **None.** The LLM never calls a real money-moving tool directly — it can only propose a structured decision that the gate then reviews. |
 | **Execution path** (deterministic, trusted) | Gate (policy/cap/idempotency checks) → MCP server → (official Razorpay MCP server or simulate mode) | **All of it.** Nothing reaches Razorpay's API without passing through the gate first. |
 
-**Why this split matters for judging:** it turns "why do you need a separate gate, why not just prompt the model better" from a rhetorical question into a number sitting in `RESULTS.md` — 22% of the model's proposals were still wrong even *after* two rounds of fixing real prompt bugs (§9, §12), and the second fix's own side effects (§9.2) are exactly the kind of thing a prompt alone can never self-certify. The gate isn't decorative.
+**Why this split matters for judging:** it turns "why do you need a separate gate, why not just prompt the model better" from a rhetorical question into a real, measured trajectory in `RESULTS.md` — 87% wrong, then 46%, then 22%, then 0.7% wrong, across three rounds of fixing real prompt bugs (§9, §12). The fact that prompting *can* get very good doesn't retire the gate: the spending cap and idempotency checks are properties of the money-moving action itself, not of how well the model reasons, so they need the gate regardless of what the override rate eventually reaches. The gate isn't decorative at 46%, and it isn't decorative at 0.7% either.
 
 **The mechanism that makes this true, not just asserted:** the MCP tools themselves (`mcp_server.py`) contain zero policy logic — they execute exactly what they're told, honestly. The only thing standing between "LLM proposed something" and "money moved" is `agent.py`'s discipline in calling those tools *only* after `gate.evaluate(...).execute` is `True`. This is deliberately a single, auditable enforcement point rather than logic scattered across multiple layers — see §12 for the honest tradeoff this creates.
 
@@ -420,15 +420,17 @@ Noted here honestly as future scope, not built: the natural next step is exactly
 
 ### 9.2 Real metrics from real runs — not projected, not hypothetical
 
-| Metric | Run 1 (schema bug present) | Run 2 (after schema-clarity fix) | Run 3 (after the ordered-decision-rule fix) |
-|---|---|---|---|
-| Subscriptions processed | 150/150 | 150/150 | 150/150 |
-| Actions executed | 145 | 143 | 143 |
-| Simulated recovered amount | ₹1,25,156.53 | ₹54,362.43 | ₹54,362.43 (of ₹1,50,729.35 total) |
-| **LLM proposals overridden by the gate** | **87% (131/150)** | **46% (69/150)** | **22% (33/150)** |
-| Correctly refused as fraud | 1/1 | 1/1 | 1/1 |
-| Correctly refused as unrecoverable | 4 | 6 | 6 |
-| Hard-blocked (spending cap/duplicate) | 0 | 0 | 0 |
+| Metric | Run 1 (schema bug present) | Run 2 (schema-clarity fix) | Run 3 (ordered-decision-rule fix) | Run 4 (negative-contrast-example fix) |
+|---|---|---|---|---|
+| Subscriptions processed | 150/150 | 150/150 | 150/150 | 150/150 |
+| Actions executed | 145 | 143 | 143 | 143 |
+| Simulated recovered amount | ₹1,25,156.53 | ₹54,362.43 | ₹54,362.43 | ₹54,362.43 (of ₹1,50,729.35 total) |
+| **LLM proposals overridden by the gate** | **87% (131/150)** | **46% (69/150)** | **22% (33/150)** | **0.7% (1/150)** |
+| Correctly refused as fraud | 1/1 | 1/1 | 1/1 | 1/1 |
+| Correctly refused as unrecoverable | 4 | 6 | 6 | 6 |
+| Hard-blocked (spending cap/duplicate) | 0 | 0 | 0 | 0 |
+
+**Run 4 confirms the third fix at full scale, not just on the targeted 33-record subset.** All three regressed codes (`authentication_failed`, `card_declined`, `payment_failed`) hit 100% match, and — importantly — none of the 117 already-correct codes from Run 3 regressed as a side effect of the third schema rewrite. The single remaining mismatch is `debit_instrument_blocked` (n=1 in this dataset), the same low-weight single-record case that has flipped between correct and incorrect across multiple runs — consistent with it being a genuinely ambiguous edge case rather than a systematic bias worth chasing further. 87%→46%→22%→0.7% across four real, independently-verified runs is the headline number for this project.
 
 Run 2→3 is the second, independently-diagnosed fix (`METRICS.md` §2, full diagnosis in the session that found two systematic biases beyond the original schema-clarity bug): an ordered decision rule plus worked examples added to the tool schema. Every one of the original bias clusters — `card_expired` (15%→100%), `card_disabled_for_online_payments` (0%→100%), `payment_timed_out` (0%→100%), `gateway_technical_error` (50%→100%), `bank_technical_error` (86%→100%), `incorrect_cvv` (88%→100%), `debit_instrument_inactive` (33%→100%), `transaction_limit_exceeded` (80%→100%) — hit exactly 100% match rate.
 
@@ -439,7 +441,7 @@ Run 2→3 is the second, independently-diagnosed fix (`METRICS.md` §2, full dia
 
 All three share `decline_source: bank` or `customer` alongside wording that reads, to the model, like an infrastructure failure or a funds problem rather than "the customer must act." The most likely cause: rule 3 in the reworded schema (`ollama_client.py`) says a `bank`-source decline that's "a system/infrastructure failure" should retry immediately — the model is applying that to *any* bank-sourced decline, not just ones actually described as downtime/timeout, so a generic "declined by the customer's bank" reads as an infra failure to it. This wasn't caught before the run because the original diagnosis (`METRICS.md` §2.2) was built entirely from Run 2's confusion data, which didn't have this failure mode since Run 2's rule set was different — a real example of a fix introducing a new, different failure surface, found only by actually re-running the batch rather than assuming the fix worked.
 
-**Update: a third schema rewrite fixed this specific regression, validated on the affected subset.** Re-checked the exact policy data for the 3 codes (`config/decline_policy.json`) rather than assuming: `authentication_failed` is `decline_source: customer`, not `bank`, so it was actually falling through to rule 4's funds/limit bucket, not over-matching rule 3 as first assumed for the bank-sourced pair. The tool schema (`ollama_client.py`) was rewritten a third time with explicit negative-contrast examples naming these exact codes. Calling `propose_action()` directly on all 33 previously-affected records (not a full re-run) gave **33/33 (100%) match** — real, run-produced evidence, but a targeted subset check, not a new official 150-record number. Full detail and the honest caveat about what this does and doesn't confirm: `METRICS.md` §2.3.
+**Resolved and confirmed at full scale (Run 4).** Re-checked the exact policy data for the 3 codes (`config/decline_policy.json`) rather than assuming: `authentication_failed` is `decline_source: customer`, not `bank`, so it was actually falling through to rule 4's funds/limit bucket, not over-matching rule 3 as first assumed for the bank-sourced pair. The tool schema (`ollama_client.py`) was rewritten a third time with explicit negative-contrast examples naming these exact codes. A targeted 33-record check gave 33/33 (100%); a full 150-record re-run (Run 4) confirmed it at scale with zero regression on the other 117 codes: **149/150 (99.3%) match, only 1 mismatch** — the same low-weight, single-record `debit_instrument_blocked` edge case that has flipped between runs throughout this project. Full numbers: `METRICS.md` §2.3, `BUILD_LOG.md` §9.2.
 
 ### 9.3 Route stretch-goal results (`ROUTE_RESULTS.md`)
 
@@ -455,10 +457,10 @@ All three share `decline_source: bank` or `customer` alongside wording that read
 
 Five minutes, ordered for maximum impact in a short judging window:
 
-1. **Open with the number, not the pitch (0:00–0:45).** State the T+3/halted gap directly from Razorpay's own docs, then cut straight to `RESULTS.md`: 150 halted subscriptions processed, real recovery numbers, and the headline finding — the gate overrode 22% of the model's proposals (down from an original 87%, across two diagnosed-and-fixed rounds — §9.2). Lead with evidence, not framing.
+1. **Open with the number, not the pitch (0:00–0:45).** State the T+3/halted gap directly from Razorpay's own docs, then cut straight to `RESULTS.md`: 150 halted subscriptions processed, real recovery numbers, and the headline finding — the gate overrode just 0.7% of the model's proposals by the final run (down from an original 87%, across three diagnosed-and-fixed rounds — §9.2). Lead with evidence, not framing.
 2. **Show the architecture in 60 seconds (0:45–1:45).** The two-path diagram (§3.5): proposal path (untrusted LLM) vs. execution path (gate, then Razorpay's own official MCP server or simulate mode). One sentence each on why the LLM never touches a money tool directly.
 3. **Live replay of one fraud case (1:45–2:45).** Pull the exact `payment_risk_check_failed` record from `audit_log.jsonl` and read the gate's decision aloud — this is the rubric's "one failure handled gracefully," happening on camera from a real log line, not staged. Optionally follow it with `python agent.py --inject-failure llm_parse_failure` to trigger the *other* failure path (the model returning no usable tool call) live, on demand, instead of only pointing at history.
-4. **The bug story (2:45–3:45).** Show the 87%→46%→22% table (§9.2) and explain *why*, twice: the first fix spelled out what `no_action_fraud` meant after the model was reading it as "no action needed"; the second added an ordered decision rule after two more systematic biases were found. Then say the honest part out loud — the second fix also made three decline codes measurably worse, found by actually re-running the batch, not assumed away. This is the single strongest "I can debug my own system, including my own fixes" moment in the whole demo.
+4. **The bug story (2:45–3:45).** Show the 87%→46%→22%→0.7% table (§9.2) and walk through all three fixes: schema clarity, then an ordered decision rule, then negative-contrast examples after that second fix measurably broke three other codes — found only by actually re-running the batch, not assumed away. Land on the point this is actually demonstrating: **the gate's necessity was never about the model being bad.** Even at 0.7% override, the gate still enforces the spending cap and idempotency checks a model can never self-certify no matter how good it gets — say this explicitly, since a near-zero override rate is exactly the point where it's easiest to mistake "the model got good" for "the gate isn't needed anymore." It's the opposite: a good model makes the gate cheap to run and just as necessary.
 5. **Close with what's real, not hypothetical (3:45–5:00).** Route stretch goal: show the deliberately oversized transfer getting blocked by the same gate, live. Close on: "the money-moving tools call Razorpay's own official MCP server, the same one Agent Studio is built on — this isn't a demo of the idea, it's a small, honest version of the real thing."
 
 ---

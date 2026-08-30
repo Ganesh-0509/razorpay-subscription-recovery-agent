@@ -68,7 +68,7 @@ Think of the system as a stack — each layer sits on top of the one below it, a
 - **A spending limit** — even a *correct* action gets blocked if it would move too much money at once, or too much money across the whole batch.
 - **A duplicate check** — the same action can't be taken twice on the same subscription in one run.
 
-**The single most important number in this whole project came directly from this layer:** across 150 real subscriptions, the AI's suggestion was wrong **22% of the time** (down from 46%, and originally 87%, across two rounds of fixing real prompt bugs — see `METRICS.md` §2) — and the gate corrected it every single time, in every round. That's the actual, measured proof that a supervisor layer is necessary regardless of how good the model gets, not just a nice-to-have.
+**The single most important number in this whole project came directly from this layer:** across 150 real subscriptions, the AI's suggestion was wrong **87% of the time** on the very first run. Three rounds of finding and fixing real prompt bugs brought that down to 46%, then 22%, then **0.7%** (see `METRICS.md` §2) — and the gate corrected every single wrong one, in every round, at every stage of that improvement. That's the actual, measured proof that a supervisor layer is necessary regardless of how good the model gets: even at 0.7% wrong, one mismatch out of 150 real money-adjacent decisions is exactly the kind of thing you want a deterministic layer catching, not a probabilistic one.
 
 ---
 
@@ -156,7 +156,7 @@ A halted subscription like `sub_042` exists
 
 **Analogy:** a spell-checker that doesn't just flag a typo but automatically fixes it to the one correct spelling, every time, regardless of what you typed.
 
-**Example, a real one from an actual run:** for a case where the payment failed because of a **technical glitch on the bank's side** (nothing to do with fraud), the AI's own written reasoning said, in effect, "this looks like a technical issue, not fraud" — and then it still picked "treat this as fraud" as its answer anyway. The gate caught the contradiction immediately, ignored the AI's picked answer, and did the actually-correct thing (retry it) instead. This exact kind of mismatch is *why* the gate exists, not a rare edge case — after two rounds of finding and fixing real prompt bugs it still happens on 22% of all 150 real subscriptions processed (down from 46%, and originally 87% — see `METRICS.md` §2 for exactly which cases and why).
+**Example, a real one from an actual run:** for a case where the payment failed because of a **technical glitch on the bank's side** (nothing to do with fraud), the AI's own written reasoning said, in effect, "this looks like a technical issue, not fraud" — and then it still picked "treat this as fraud" as its answer anyway. The gate caught the contradiction immediately, ignored the AI's picked answer, and did the actually-correct thing (retry it) instead. This exact kind of mismatch is *why* the gate exists, not a rare edge case — it happened on 87% of all 150 real subscriptions on the first run, and even after three rounds of finding and fixing real prompt bugs, it still happens on one case out of 150 (down from 46%, then 22% — see `METRICS.md` §2 for exactly which cases and why, at every stage).
 
 ---
 
