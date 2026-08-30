@@ -19,12 +19,13 @@ Run 2 at `logs/pre_accuracy_fix/`, Run 3 at `logs/run3_before_third_fix/`.
 interruption. (Run 3, preserved at `logs/run3_before_third_fix/`, is the
 one with the real mid-batch kill/resume story — still cited in §7.)
 
-**Read §2.4 before quoting any match-rate number from this page.** The
-150-record LLM-accuracy figures are really 15 unique scenarios repeated
-with different amounts (`decline_description` is fixed per code,
-`temperature: 0` makes output deterministic) — §2.4 explains exactly what
-that does and doesn't change about what these numbers mean, and reports a
-genuine out-of-sample generalization test run specifically to check it.
+**Read §2.4–§2.5 before quoting any match-rate number from this page.**
+The 150-record LLM-accuracy figures are really 15 unique scenarios
+repeated with different amounts (`decline_description` is fixed per code,
+`temperature: 0` makes output deterministic) — §2.4 tests generalization
+to novel phrasing (16/16), §2.5 deliberately tries to break it with
+adversarial jargon and finds one real miss, on a fraud case, with a
+precise explanation of why it doesn't reach Razorpay regardless.
 (`already_done_from_checkpoint: 124, remaining: 26`); `run_finished`:
 `2026-08-30T13:01:42Z`. A third real instance of the exact resilience
 story BUILD_LOG.md §3.6/§12 already documents twice — see §7 below.
@@ -217,17 +218,63 @@ unrecoverable), not pattern-matching literal text.
   path and the `--inject-failure unknown_decline_code` demo path route to
   manual review and never produce a `gate_decision` event.
 
-**Bottom line on generalization:** this project has now tested two
-different things, and they answer two different questions. The 150-record
+### 2.5 Adversarial test — deliberately trying to break it, and finding one real crack
+
+The 16-phrasing test in §2.4 used clean, well-formed paraphrases. This one
+uses real payments-industry jargon, terse log-style text, and abbreviations
+a small model plausibly hasn't seen much of — `3DS`, `CNP`, `TTL`,
+`acquirer`, `issuer`, `provisioned` — plus one description written to be
+genuinely hard to categorize. The goal was to find where this actually
+breaks, not to produce another clean number.
+
+**Result: 15/16 (93.8%).** Fourteen jargon-heavy/terse descriptions were
+classified correctly, including some that look intimidating
+(`"5xx from acquirer, transient"` → `immediate_retry`, correctly; `"CNP
+transactions disabled by cardholder"` → `payment_link_nudge`, correctly).
+
+**The one failure is the highest-stakes possible miss: a fraud case.**
+`payment_risk_check_failed` (correct: `no_action_fraud`), described as
+*"High risk score triggered decline per issuer risk engine"*, was
+proposed as `payment_link_nudge` instead — even though the description
+contains the word "risk" twice. The model's own reasoning: *"the decline
+description does not mention any technical/system problem"* and defaulted
+to "customer must act," missing that an automated risk-engine score is
+exactly what rule 1 ("bank flagged this decline specifically as
+fraud/risk") is describing. This is a real, narrower-than-intended reading
+of rule 1 — it seems to need something closer to "bank says this is fraud"
+phrasing, not "an automated system scored this as high-risk."
+
+**Why this doesn't threaten the actual pipeline, verified precisely, not
+assumed:** `gate.evaluate()` takes `decline_code` as a direct parameter
+(`gate.py` line 57) and looks up the correct policy action from
+`config/decline_policy.json` using that code — **completely independent
+of the LLM's proposal or its interpretation of any description text.**
+In the real pipeline, `decline_code` is always the actual structured code
+(from Razorpay's data or this project's synthetic data), never something
+the LLM infers from free text — the description is only ever context
+*for the LLM's reasoning*, not an input to the gate's decision. So if this
+exact miss happened in the real pipeline, the gate would still correctly
+route it to `no_action_fraud`/manual review regardless of what the LLM
+proposed, exactly the same way it already corrects the 1-in-150 mismatch
+in Run 4. This adversarial test is, concretely, the clearest evidence in
+this entire project for why the LLM never gets to execute its own
+proposal directly — found by deliberately trying to break it, not
+asserted as a hypothetical.
+
+**Bottom line on generalization:** this project has now tested three
+different things, answering three different questions. The 150-record
 batch runs (§2, §2.1) prove the *architecture* — proposal/execution
 separation, the gate, the audit trail — works end to end at volume. The
-16-phrasing test above proves the *prompt fix* generalizes past rote
-memorization, at least within the same 16 known situation categories.
-Neither one is evidence this works on a genuinely new, real-world dataset
-with decline reasons or phrasing this project has never encountered —
-that would need either a much larger held-out set of real Razorpay
-decline messages (not available) or a deliberately adversarial synthetic
-set built to probe exactly that gap, which hasn't been built yet.
+16-phrasing test (§2.4) proves the *prompt fix* generalizes past rote
+memorization, within the known 16 situation categories. This adversarial
+test proves that even when the LLM *does* fail on harder, realistic
+input — including on the single highest-stakes category, fraud — the
+gate's decline-code-first design (not description-based) means that
+failure never reaches Razorpay's API. None of this is evidence the whole
+system works on a genuinely new, real-world dataset with decline codes
+outside this 16-entry catalog — that would need either real Razorpay
+decline data (not available) or an even larger adversarial set, which
+could always surface more edge cases than three rounds of testing found.
 
 | Final action | Count | % of 150 |
 |---|---|---|

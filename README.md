@@ -136,18 +136,23 @@ ambiguous single case, not a pattern. And the gate doesn't retire even at
 0.7%: the spending cap and idempotency checks are properties of the
 money-moving action itself, not of the model's judgment.
 
-**One honest caveat, found and then tested, not just disclosed:** the
-150-record match rate is really **15 unique scenarios**, not 150 —
+**One honest caveat, found and then tested twice, not just disclosed:**
+the 150-record match rate is really **15 unique scenarios**, not 150 —
 `decline_description` is a fixed string per code and the model runs at
 `temperature: 0`, so every record sharing a code gets the identical
-proposed action every time (verified directly, zero variance). Rather
-than leave that as an unresolved gap, 16 hand-written alternate phrasings
-of those same situations — sharing no wording with the fixed catalog —
-were run through the model directly: **16/16 (100%) matched policy**,
-real evidence the fix generalizes past rote memorization of exact
-strings. Full detail, including what this still doesn't prove (decline
-codes outside this catalog, ambiguous or non-English real-world text):
-`METRICS.md` §2.4.
+proposed action every time (verified directly, zero variance). Tested
+this two ways instead of leaving it as an unresolved gap:
+
+- **16 clean paraphrases**, sharing no wording with the fixed catalog:
+  **16/16 (100%)** matched policy (`METRICS.md` §2.4).
+- **16 deliberately adversarial descriptions** — real payments jargon
+  (`3DS`, `CNP`, `acquirer`), terse log-style text: **15/16 (93.8%)**,
+  with one real miss — a fraud case read as customer-actionable despite
+  the description containing the word "risk" twice. **This miss doesn't
+  reach Razorpay either way:** the gate looks up the correct action from
+  the actual `decline_code`, never from the LLM's reading of any
+  description, so this is concrete, adversarially-discovered proof of
+  exactly why the LLM's proposal never executes directly (`METRICS.md` §2.5).
 
 ## 5. Visual Proof (No Frontend Needed)
 
