@@ -163,6 +163,11 @@ python agent.py            # runs the full pipeline, writes RESULTS.md and logs/
 # first record live, instead of pointing at a historical log line -
 # python agent.py --inject-failure llm_parse_failure
 # python agent.py --inject-failure llm_invalid_action
+
+python generate_report.py  # writes REPORT.html - one static, offline page
+                            # built from audit_log.jsonl (no server, no
+                            # framework, no CDN), watchable in 10 seconds
+                            # instead of scrolled through as raw JSONL
 ```
 
 ## Tests
