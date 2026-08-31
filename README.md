@@ -213,12 +213,31 @@ a hosted product. Here's what to actually show instead of a UI:
   `Gate`/`AuditLogger`/MCP-client sequence `agent.py`'s `run()` itself uses
   across a real batch — the second is hard-blocked and routed to
   `flag_for_manual_review` instead of a second money-moving tool call.
-- **Simulate mode is still the default for the main 150-record batch.**
-  The official-MCP-server integration has been verified end-to-end with
-  real test-mode keys on smaller samples (`real_mcp_demo.py`,
-  `agent_onetime.py` — 34 real objects total), but the full batch still
-  runs simulated by default so the repo works for anyone without a
-  Razorpay account.
+- **Resolved: the committed main-batch log actually was real, not
+  simulated as documented — and the real calls were silently failing.**
+  Checking this limitation directly (auditing `logs/audit_log.jsonl`, not
+  assuming) found the committed 150-record run had real `.env` keys active
+  when it ran, producing real Razorpay object IDs, not `order_sim_...`. Worse:
+  of its 143 tool calls, **all 77 `create_payment_link` calls had failed**
+  (74 hit Razorpay's real test-mode account cap of 30 payment links,
+  already used up by `real_mcp_demo.py`/`agent_onetime.py`'s earlier real
+  runs against the same account; 3 hit network timeouts) and 2 of 66
+  `create_retry_order` calls failed on DNS blips — 79/143 silently counted
+  as "executed" in `RESULTS.md` despite never actually succeeding, because
+  `write_results()` only checks gate approval, never whether the
+  underlying API call itself succeeded. Confirmed the two smaller
+  real-key demos (`real_mcp_demo.py`'s 5 calls, `agent_onetime.py`'s 29)
+  were unaffected — genuinely real and genuinely successful, checked the
+  same way. Fixed by regenerating the flagship run in true simulate mode
+  (keys blanked for that one process, `.env` itself untouched). Every
+  headline number in this README/`METRICS.md`/`BUILD_LOG.md` came out
+  byte-for-byte identical — `simulated_customer_response` is static
+  per-record data and the LLM is temperature-0, so nothing that mattered
+  to the published numbers ever depended on whether the API call
+  underneath actually succeeded. Only the audit log's `tool_result`
+  payloads changed, from 79 silent failures to clean `simulated: true`
+  results — restoring what the docs already claimed rather than changing
+  any claim.
 - **Resolved, kept for the record:** an earlier fix regressed 3 decline
   codes (`authentication_failed`, `card_declined`, `payment_failed`) — a
   third schema fix resolved all three, confirmed at full 150-record scale
