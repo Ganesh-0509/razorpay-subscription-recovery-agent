@@ -134,7 +134,7 @@ Do this once, then record in as few takes as possible:
 **Screen:** quick cut to GitHub Actions tab (green checks), then commits page.
 
 **Say:**
-> "24 automated tests run on every commit. The commit history is real,
+> "30 automated tests run on every commit. The commit history is real,
 > incremental work, not generated in one shot."
 
 **Why:** this 45 seconds is entirely third-party-verifiable proof — the strongest possible signal in the least amount of time.

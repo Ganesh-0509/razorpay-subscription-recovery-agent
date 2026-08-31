@@ -102,7 +102,7 @@ pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
 | Guardrail logic | Internal certification process (closed) | One human-readable, validated JSON config |
 | Audit trail | Hosted dashboard summary ("what/when") | Raw per-decision JSONL — LLM reasoning + gate override reasoning both logged |
 | Access | Sales-assisted early access (Typeform) | Runs today, $0, personal test-mode account |
-| **Test coverage** | Not public | **22 automated tests, CI-verified on every push** |
+| **Test coverage** | Not public | **30 automated tests, CI-verified on every push** |
 | **Domain scope** | Separate named agent per use case | **One gate/policy pattern reused unchanged across two domains** — subscriptions and one-time payments ([§10](#10-stretch-goals)) |
 | **Model accuracy, published** | Not public | **Published in full** — exact match rate, confusion patterns, and two rounds of diagnosed prompt fixes ([`METRICS.md`](METRICS.md)) |
 | **Real-integration proof** | N/A (their own product) | **Verifiable independently** — real Razorpay test-mode object IDs anyone can look up ([§5](#5-visual-proof--no-frontend-needed)) |
@@ -190,16 +190,29 @@ a hosted product. Here's what to actually show instead of a UI:
 
 ## 6. Known Limitations
 
-- **Single point of enforcement, not defense-in-depth.** The gate is only
-  ever consulted because `agent.py` chooses to call it — the MCP tools
-  themselves have no policy checks of their own. Fine for this project's
-  scope; a real multi-caller production system would need the check moved
-  inside the tool itself.
-- **Idempotency is unit-tested but never exercised at batch scale.** No
-  `subscription_id` repeats in the synthetic 150-record set by
-  construction, so `RESULTS.md`'s "hard-blocked: 0" proves the check
-  passes in isolation (`tests/test_gate.py`), not that it's been
-  triggered under real batch conditions.
+- **Resolved: the MCP tools now carry their own independent check, not
+  just the gate's.** Previously the gate was only ever consulted because
+  `agent.py` chose to call it first — the three money-moving MCP tools
+  had no policy check of their own at all. `mcp_server.py`'s
+  `create_payment_link`, `create_retry_order`, and `initiate_route_transfer`
+  now each call `_enforce_tool_level_cap()` before doing anything else: an
+  independently-stated spending cap and per-run duplicate-call refusal,
+  proven by `tests/test_mcp_server_guard.py` calling the tools directly,
+  bypassing the gate entirely. This is still not full policy
+  defense-in-depth — the tools never receive a `decline_code`, so the
+  decline-code→action lookup itself still lives only in `gate.py` — but a
+  caller that skipped the gate can no longer overspend or double-act
+  through this file the way it could before.
+- **Resolved: idempotency is now proven at batch scale, not just in
+  isolation.** No `subscription_id` repeats in the synthetic 150-record
+  set by construction, so `RESULTS.md`'s "hard-blocked: 0" only proved the
+  check passes in isolation (`tests/test_gate.py`), never that it fires
+  under real batch conditions.
+  `tests/test_idempotency_integration.py` closes that gap directly: two
+  records sharing one `subscription_id`, run through the same shared
+  `Gate`/`AuditLogger`/MCP-client sequence `agent.py`'s `run()` itself uses
+  across a real batch — the second is hard-blocked and routed to
+  `flag_for_manual_review` instead of a second money-moving tool call.
 - **Simulate mode is still the default for the main 150-record batch.**
   The official-MCP-server integration has been verified end-to-end with
   real test-mode keys on smaller samples (`real_mcp_demo.py`,
@@ -257,7 +270,7 @@ python generate_report.py  # writes REPORT.html - one static, offline page
 ## 9. Testing
 
 ```bash
-python -m pytest tests/ -v   # 22 tests, no Ollama server or real keys needed
+python -m pytest tests/ -v   # 30 tests, no Ollama server or real keys needed
 ```
 
 The gate has unit tests independent of the LLM — it must be correct even
