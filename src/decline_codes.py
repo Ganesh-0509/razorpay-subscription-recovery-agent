@@ -87,12 +87,19 @@ def _load_decline_codes(path: Path) -> dict[str, DeclineCode]:
                 f"{path.name}: {code!r} has invalid allowed_action {entry['allowed_action']!r}; "
                 f"must be one of {[a.value for a in RecoveryAction]}"
             )
+        rate = entry["simulated_success_rate"]
+        if not isinstance(rate, (int, float)) or isinstance(rate, bool) or not (0.0 <= rate <= 1.0):
+            raise ValueError(
+                f"{path.name}: {code!r} has invalid simulated_success_rate {rate!r}; "
+                f"must be a number between 0.0 and 1.0"
+            )
+
         codes[code] = DeclineCode(
             code=code,
             description=entry["description"],
             source=source,
             allowed_action=allowed_action,
-            simulated_success_rate=entry["simulated_success_rate"],
+            simulated_success_rate=float(rate),
         )
     return codes
 

@@ -16,6 +16,8 @@
 
 ### C
 
+**Compliant escalation** — the buildathon rubric's own phrase for what this project's gate does once automated recovery stops being the right call: hand the case to a human (`flag_for_manual_review`) instead of continuing to act. *Used for:* `gate.py`'s two cross-run stopping rules — the attempt cap and the stale-halt threshold, see **Stopping rule** and `BUILD_LOG.md` §12.
+
 **Checkpoint / resume** — saving progress to a file as you go, so an interrupted run can pick up where it left off instead of starting over and redoing finished work. *Used for:* `logs/results_checkpoint.jsonl`, built after a real background run got killed mid-batch twice.
 
 **Claude Agent SDK** — Anthropic's toolkit for building AI agents using their Claude models. Razorpay's real Agent Studio is built on this. This project references it as the pattern being mirrored, but defaults to a free local model (Ollama) instead of the paid Claude API — see `BUILD_LOG.md` §2.2.
@@ -56,7 +58,7 @@
 
 ### I
 
-**Idempotency / idempotency key** — a way of tagging a request so that if it accidentally gets sent twice, the system only actually performs the action once, instead of double-acting. *Used for:* one of the gate's three checks (`BUILD_LOG.md` §5.1) — proven correct by a dedicated unit test, though not exercised at scale against the real 150-record dataset since no subscription ID repeats within one run (a known, documented limitation — see `BUILD_LOG.md` §12).
+**Idempotency / idempotency key** — a way of tagging a request so that if it accidentally gets sent twice, the system only actually performs the action once, instead of double-acting. *Used for:* one of the gate's checks (`BUILD_LOG.md` §5.1) — proven correct by a dedicated unit test, though not exercised at scale against the real 150-record dataset since no subscription ID repeats within one run (a known, documented limitation — see `BUILD_LOG.md` §12).
 
 ---
 
@@ -124,7 +126,9 @@
 
 **Simulate mode** — this project's fallback behavior when no real Razorpay test keys are set: the same code path runs, but returns realistic fake responses instead of calling a real API — so the whole pipeline works for free before a Razorpay account even exists. *Used for:* `razorpay_client.py`.
 
-**Spending cap** — a hard limit (per single action, and per full run) on how much money the gate will ever allow to move, regardless of what any other check concluded. One of the gate's three checks — see `BUILD_LOG.md` §5.1.
+**Spending cap** — a hard limit (per single action, and per full run) on how much money the gate will ever allow to move, regardless of what any other check concluded. One of the gate's checks — see `BUILD_LOG.md` §5.1.
+
+**Stopping rule** — a hard condition that makes the gate refuse to keep acting automatically, regardless of what the LLM proposed. *Used for:* same-run idempotency and the spending cap (original), plus two newer cross-run rules in `gate.py`: the **attempt cap** (`MAX_ATTEMPTS_PER_SUBSCRIPTION` — escalate after 3 prior real attempts across any previous run, derived from the audit log's own history) and the **stale-halt threshold** (`STALE_HALT_ESCALATION_DAYS` — escalate once a subscription has sat halted 12+ days). Together with the audit trail, this is the project's direct answer to the rubric's "stopping rules" + "compliant escalation" wording — see `BUILD_LOG.md` §12.
 
 **stdio** — "standard input/output," the plain text-in/text-out channel programs normally use. *Used for:* how this project's MCP components (and Razorpay's official MCP server, when connected to directly) communicate.
 
@@ -138,7 +142,7 @@
 
 **Tool calling / function calling** — the mechanism where an AI model, instead of just replying with text, says "call this specific function with these specific arguments." *Used for:* the AI's structured `record_decision` proposal — the only tool call the model itself is ever allowed to make directly.
 
-**Track** — one of the five problem categories in the Razorpay AI Buildathon (this project targets **Track 1 — AI Growth & Agentic Commerce**). See `BUILD_LOG.md` §1 for why this track was chosen over the other four.
+**Track** — one of the five problem categories in the Razorpay AI Buildathon (this project targets **Track 3 — AI Revenue Recovery**). See `BUILD_LOG.md` §1 for why this track was chosen over the other four.
 
 ---
 

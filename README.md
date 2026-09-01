@@ -3,12 +3,14 @@
 [![tests](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Track 1 — AI Growth & Agentic Commerce**
+**Track 3 — AI Revenue Recovery**
 
 A bounded, gated, audited agent that picks up exactly where Razorpay's own
-subscription engine gives up — and a small, honest rebuild of the pattern
-behind Razorpay's own Agent Studio, built to prove the architecture, not
-to compete with the product.
+subscription engine gives up — detects a halted subscription, decides the
+right recovery intervention, and executes it with a measured ₹ recovered,
+stopping rules, and a full audit trail. Also a small, honest rebuild of the
+pattern behind Razorpay's own Agent Studio, built to prove the
+architecture, not to compete with the product.
 
 ---
 
@@ -60,6 +62,16 @@ spending caps before anything reaches Razorpay, and overrides the LLM
 whenever it's wrong (see [§4](#4-results-verified-against-raw-logs) for
 exactly how often, and why that number is the point, not a flaw).
 
+The gate also enforces two **compliant-escalation stopping rules** at the
+cross-run level, on top of same-run idempotency and the spending cap: a
+subscription gets handed to a human (`flag_for_manual_review`) instead of
+nudged again once it has **3 prior real recovery attempts across any
+previous run** (derived from the audit log's own history, not a per-process
+counter — `gate.py`'s `MAX_ATTEMPTS_PER_SUBSCRIPTION`), or once it's been
+**halted 12+ days** (`STALE_HALT_ESCALATION_DAYS`) and judged too cold for
+an automated nudge to still be the right call. Both are proven by dedicated
+deterministic unit tests, not asserted — see `BUILD_LOG.md` §12.
+
 When real test-mode keys are set, the two money-moving tools
 (`create_payment_link`, `create_retry_order`) route through **Razorpay's
 own official MCP server** (github.com/razorpay/razorpay-mcp-server, Docker
@@ -102,7 +114,7 @@ pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
 | Guardrail logic | Internal certification process (closed) | One human-readable, validated JSON config |
 | Audit trail | Hosted dashboard summary ("what/when") | Raw per-decision JSONL — LLM reasoning + gate override reasoning both logged |
 | Access | Sales-assisted early access (Typeform) | Runs today, $0, personal test-mode account |
-| **Test coverage** | Not public | **30 automated tests, CI-verified on every push** |
+| **Test coverage** | Not public | **43 automated tests, CI-verified on every push** |
 | **Domain scope** | Separate named agent per use case | **One gate/policy pattern reused unchanged across two domains** — subscriptions and one-time payments ([§10](#10-stretch-goals)) |
 | **Model accuracy, published** | Not public | **Published in full** — exact match rate, confusion patterns, and two rounds of diagnosed prompt fixes ([`METRICS.md`](METRICS.md)) |
 | **Real-integration proof** | N/A (their own product) | **Verifiable independently** — real Razorpay test-mode object IDs anyone can look up ([§5](#5-visual-proof--no-frontend-needed)) |
@@ -119,11 +131,27 @@ not copied from prose — full derivation in [`METRICS.md`](METRICS.md).
 | Metric | Value |
 |---|---|
 | Halted subscriptions processed | 150/150 |
-| Simulated recovered amount | ₹54,362.43 of ₹1,50,729.35 total |
-| **LLM proposal match rate** | **99.3%** (149/150) — up from 78.0%, 54.0%, originally ~13% across 3 real prompt fixes |
+| Actions executed (retries/nudges the gate let through) | 109/150 |
+| Simulated recovered amount | ₹44,856.72 of ₹1,50,729.35 total |
+| **LLM proposal match rate** | **99.3%** (149/150) — up from 78.0%, 54.0%, originally ~13% across 3 real prompt fixes — **unchanged by the escalation-rules update below**, since `llm_matched_policy` is computed before either new rule runs |
 | LLM proposals the gate had to override | 0.7% (1/150) — down from 87% on the first run |
+| **Escalated to manual review by the new compliant-escalation rules** | **34/150** — all via the stale-halt threshold (§12: `halted_days_ago` ≥ 12); the cross-run attempt cap fired 0 times in this single-pass run by construction (same honest-disclosure pattern as idempotency below), demoed instead via `--inject-failure repeat_attempts` and dedicated unit tests |
 | Hard-blocked by gate (cap/duplicate) | 0 in the main pipeline; 1 real block in the Route demo |
-| Real Razorpay objects created (real MCP server, real test keys) | 34 (`REAL_MCP_RESULTS.md` + `RESULTS_ONETIME.md`) |
+| Real Razorpay objects created (real MCP server, real test keys) | 34 (`REAL_MCP_RESULTS.md` + `RESULTS_ONETIME.md`) — coincidentally the same number as the escalation count above; unrelated figures |
+
+**The recovered amount is lower than an earlier version of this run
+(₹44,856.72 vs. a since-superseded ₹54,362.43) on purpose, not as a
+regression.** Adding the stale-halt stopping rule means 34 subscriptions
+that would previously have been auto-nudged are now correctly escalated to
+a human instead, since they've been halted 12+ days and are judged too
+cold for an automated attempt to still be the right call. That's fewer
+executed actions and less simulated recovery, in exchange for actually
+having the "stopping rules" + "compliant escalation" behavior the rubric
+asks for, backed by a real 150-record run instead of only unit tests. The
+pre-escalation-rules run is preserved at `logs/pre_escalation_rules/` for
+direct comparison, following this project's existing convention of never
+deleting a superseded run's raw log (`logs/pre_accuracy_fix/`,
+`logs/run3_before_third_fix/`).
 
 The override rate isn't a bug to be embarrassed about — it's the
 measured proof a supervisor layer is necessary, and that stays true even
@@ -190,6 +218,24 @@ a hosted product. Here's what to actually show instead of a UI:
 
 ## 6. Known Limitations
 
+- **New: compliant-escalation stopping rules (cross-run attempt cap +
+  stale-halt threshold), and an honest note on what they don't yet cover.**
+  Added after re-checking the codebase directly against the buildathon
+  rubric's "compliant escalation" + "stopping rules" wording and finding
+  the gate only had same-run idempotency and a spending cap — nothing
+  stopped the same subscription being nudged forever across repeated runs,
+  and `halted_days_ago` was generated but never used by the decision layer.
+  Both new rules are in `gate.py`, deterministic (no LLM involved, same as
+  everything else there), and proven with dedicated unit tests
+  (`tests/test_gate.py`, `tests/test_escalation_history.py`) — and then with
+  a full 150-record re-run, not just unit tests: the stale-halt rule fired
+  34 times against real batch data (§4). The pre-change run is preserved at
+  `logs/pre_escalation_rules/` rather than overwritten, matching this
+  project's existing convention for superseded runs. Full reasoning in
+  `BUILD_LOG.md` §12. Also explicitly out of
+  scope: real-world contact-frequency/consent compliance (TRAI/DND, RBI's
+  e-mandate pre-debit notification window) — "compliant" here means
+  bounded and attempt-capped, not integrated with those specific regimes.
 - **Resolved: the MCP tools now carry their own independent check, not
   just the gate's.** Previously the gate was only ever consulted because
   `agent.py` chose to call it first — the three money-moving MCP tools
@@ -289,7 +335,7 @@ python generate_report.py  # writes REPORT.html - one static, offline page
 ## 9. Testing
 
 ```bash
-python -m pytest tests/ -v   # 30 tests, no Ollama server or real keys needed
+python -m pytest tests/ -v   # 43 tests, no Ollama server or real keys needed
 ```
 
 The gate has unit tests independent of the LLM — it must be correct even

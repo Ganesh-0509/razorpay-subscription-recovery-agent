@@ -64,9 +64,11 @@ Think of the system as a stack — each layer sits on top of the one below it, a
 
 **Example, the interesting case:** for `sub_042`, the model actually said (in a real run of this project): the case is about insufficient funds and needs no further action — and picked "no action needed" as its answer. That's wrong twice over: the real answer for "card expired" is "send a payment link," not "do nothing." The gate catches this, throws out the AI's incorrect suggestion, and does the correct thing instead — automatically, every single time, no exceptions.
 
-**Two extra safety checks, beyond just "was the AI right":**
+**Four extra safety checks, beyond just "was the AI right":**
 - **A spending limit** — even a *correct* action gets blocked if it would move too much money at once, or too much money across the whole batch.
 - **A duplicate check** — the same action can't be taken twice on the same subscription in one run.
+- **A "stop nagging" limit** — if this same subscription has already been nudged 3 times before (checked against the permanent log, not just this run), the gate stops trying automatically and hands it to a human instead of nudging a fourth time.
+- **A "too cold to bother" limit** — if a subscription has been sitting halted for 12+ days, the gate treats it as unlikely to still be worth an automated nudge and hands it to a human too, instead of pretending a fresh case and a two-week-old one deserve the exact same automated treatment.
 
 **The single most important number in this whole project came directly from this layer:** across 150 real subscriptions, the AI's suggestion was wrong **87% of the time** on the very first run. Three rounds of finding and fixing real prompt bugs brought that down to 46%, then 22%, then **0.7%** (see `METRICS.md` §2) — and the gate corrected every single wrong one, in every round, at every stage of that improvement. That's the actual, measured proof that a supervisor layer is necessary regardless of how good the model gets: even at 0.7% wrong, one mismatch out of 150 real money-adjacent decisions is exactly the kind of thing you want a deterministic layer catching, not a probabilistic one.
 

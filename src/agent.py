@@ -8,6 +8,13 @@ The orchestrator. For each halted subscription:
   4. Log every step to the audit trail (audit_log.py), whether allowed or
      denied.
 
+The actual per-record propose/gate/execute/audit sequence lives in
+recovery_pipeline.py, shared with agent_onetime.py - this file supplies the
+subscription-specific configuration (field names, situation text) plus
+everything agent_onetime.py deliberately doesn't have: checkpoint/resume
+and the --inject-failure CLI. See recovery_pipeline.py's docstring and
+BUILD_LOG.md §12 for why this was extracted.
+
 Note on transport: the MCP Client below is constructed directly against the
 in-process `server` object, which is a supported mode of the official SDK
 (mcp.Client accepts an MCPServer instance) and exercises the real MCP
@@ -25,15 +32,18 @@ from pathlib import Path
 from mcp import Client
 
 from audit_log import AuditLogger
-from decline_codes import DECLINE_CODES, RecoveryAction, get_decline_code
+from decline_codes import RecoveryAction
 from gate import Gate
 from mcp_server import server as mcp_server
-from ollama_client import propose_action
+from ollama_client import DEFAULT_SITUATION
+from recovery_pipeline import count_prior_attempts, process_record, render_decline_code_table
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "halted_subscriptions.json"
 AUDIT_PATH = Path(__file__).parent.parent / "logs" / "audit_log.jsonl"
 CHECKPOINT_PATH = Path(__file__).parent.parent / "logs" / "results_checkpoint.jsonl"
 RESULTS_PATH = Path(__file__).parent.parent / "RESULTS.md"
+
+ID_FIELD = "subscription_id"
 
 ACTION_TO_TOOL = {
     RecoveryAction.IMMEDIATE_RETRY: "create_retry_order",
@@ -44,177 +54,30 @@ ACTION_TO_TOOL = {
 }
 
 
-def _extract_tool_text(call) -> str | None:
-    """Defensively pull text out of an MCP CallToolResult - don't assume
-    content[0] exists or is text-typed, even though every tool here always
-    returns exactly that shape today."""
-    if not call.content:
-        return None
-    first = call.content[0]
-    return getattr(first, "text", None)
+def _count_prior_attempts(audit_events: list[dict], subscription_id: str) -> int:
+    """Thin, subscription-specific wrapper over recovery_pipeline.count_prior_attempts -
+    kept as a top-level name here since tests import it as `agent._count_prior_attempts`."""
+    return count_prior_attempts(audit_events, ID_FIELD, subscription_id)
 
 
 async def process_one(
-    client: Client, gate: Gate, audit: AuditLogger, sub: dict, inject_failure: str | None = None
+    client: Client,
+    gate: Gate,
+    audit: AuditLogger,
+    sub: dict,
+    inject_failure: str | None = None,
+    prior_attempt_count: int = 0,
 ) -> dict:
-    # An unrecognized decline code is a real, distinct failure mode from
-    # "the LLM proposed something wrong" - it means this record describes
-    # a situation the policy table has no entry for at all, so there is no
-    # ground truth to gate against and no safe automated action to take.
-    # Previously this fell through to get_decline_code()'s KeyError,
-    # caught only by run()'s generic per-record try/except and logged as
-    # an undifferentiated "record_processing_error" with a silent
-    # no_action_unrecoverable fallback - correct in effect, but
-    # indistinguishable from any other kind of crash and not routed to a
-    # human. Handled explicitly here instead: flagged for manual review
-    # (a human should decide what an unknown code means), not written off
-    # as if it were something already known to be a dead end. Never
-    # reaches the LLM or the gate at all, since neither has anything to
-    # evaluate. See METRICS.md §2.4 and tests/test_agent_unknown_code.py.
-    if inject_failure == "unknown_decline_code" or sub["decline_code"] not in DECLINE_CODES:
-        reason = f"No policy entry for decline_code '{sub['decline_code']}' - needs human review."
-        audit.log(
-            "unknown_decline_code",
-            subscription_id=sub["subscription_id"],
-            decline_code=sub["decline_code"],
-            fallback_action=RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
-        )
-        call = await client.call_tool(
-            "flag_for_manual_review", {"subscription_id": sub["subscription_id"], "reason": reason}
-        )
-        tool_result = _extract_tool_text(call)
-        audit.log(
-            "mcp_tool_call",
-            subscription_id=sub["subscription_id"],
-            tool="flag_for_manual_review",
-            result=tool_result,
-        )
-        return {
-            "subscription_id": sub["subscription_id"],
-            "amount_paise": sub["amount_paise"],
-            "decline_code": sub["decline_code"],
-            "final_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
-            "gate_executed": True,
-            "llm_matched_policy": False,
-            "simulated_customer_response": False,
-            "tool_result": tool_result,
-        }
-
-    policy = get_decline_code(sub["decline_code"])
-
-    # Deterministic, on-demand version of D4 (BUILD_LOG.md §7.3) for live
-    # demos - forces the exact same graceful-degradation code below that
-    # already runs for a real Ollama hiccup, without needing to wait for
-    # one or fake it inside ollama_client.py. Every other record in the
-    # run still calls the real model normally.
-    if inject_failure == "llm_parse_failure":
-        proposal = {
-            "action": None,
-            "reasoning": "[injected for demo] simulated: model returned no usable tool call",
-        }
-    elif inject_failure == "llm_invalid_action":
-        proposal = {
-            "action": "definitely_not_a_real_action",
-            "reasoning": "[injected for demo] simulated: model proposed an action outside the known enum",
-        }
-    else:
-        proposal = propose_action(sub, policy.description, policy.source.value)
-    llm_action_raw = proposal["action"]
-
-    # Graceful degradation: if the model failed to produce a usable tool
-    # call, fall back to the safest possible default rather than crashing
-    # or silently skipping the record. This IS the "one failure handled
-    # gracefully" moment from the rubric, and it's a real one - it will
-    # actually trigger sometimes with an 8B local model.
-    if llm_action_raw is None:
-        audit.log(
-            "llm_parse_failure",
-            subscription_id=sub["subscription_id"],
-            note=proposal["reasoning"],
-            fallback_action=RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
-        )
-        llm_action = RecoveryAction.NO_ACTION_UNRECOVERABLE
-    else:
-        try:
-            llm_action = RecoveryAction(llm_action_raw)
-        except ValueError:
-            audit.log(
-                "llm_invalid_action",
-                subscription_id=sub["subscription_id"],
-                raw_action=llm_action_raw,
-                fallback_action=RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
-            )
-            llm_action = RecoveryAction.NO_ACTION_UNRECOVERABLE
-
-    decision = gate.evaluate(
-        subscription_id=sub["subscription_id"],
-        decline_code=sub["decline_code"],
-        proposed_action=llm_action,
-        amount_paise=sub["amount_paise"],
+    return await process_record(
+        client, gate, audit, sub,
+        id_field=ID_FIELD,
+        action_to_tool=ACTION_TO_TOOL,
+        item_label_field="plan",
+        situation=DEFAULT_SITUATION,
+        record_label="Subscription",
+        inject_failure=inject_failure,
+        prior_attempt_count=prior_attempt_count,
     )
-
-    audit.log(
-        "gate_decision",
-        subscription_id=sub["subscription_id"],
-        decline_code=sub["decline_code"],
-        llm_proposed_action=llm_action.value,
-        llm_reasoning=proposal["reasoning"],
-        llm_matched_policy=decision.llm_matched_policy,
-        gate_execute=decision.execute,
-        gate_reason=decision.reason,
-        final_action=decision.final_action.value,
-    )
-
-    tool_result = None
-    if decision.execute and decision.final_action in (
-        RecoveryAction.IMMEDIATE_RETRY,
-        RecoveryAction.DELAYED_RETRY,
-        RecoveryAction.PAYMENT_LINK_NUDGE,
-    ):
-        tool_name = ACTION_TO_TOOL[decision.final_action]
-        if tool_name == "create_payment_link":
-            args = {
-                "subscription_id": sub["subscription_id"],
-                "amount_paise": sub["amount_paise"],
-                "description": f"Complete your payment for {sub['plan']}",
-            }
-        else:
-            args = {
-                "subscription_id": sub["subscription_id"],
-                "amount_paise": sub["amount_paise"],
-            }
-        call = await client.call_tool(tool_name, args)
-        tool_result = _extract_tool_text(call)
-        audit.log(
-            "mcp_tool_call",
-            subscription_id=sub["subscription_id"],
-            tool=tool_name,
-            arguments=args,
-            result=tool_result,
-        )
-    elif decision.final_action in (RecoveryAction.NO_ACTION_FRAUD, RecoveryAction.NO_ACTION_UNRECOVERABLE):
-        call = await client.call_tool(
-            "flag_for_manual_review",
-            {"subscription_id": sub["subscription_id"], "reason": decision.reason},
-        )
-        tool_result = _extract_tool_text(call)
-        audit.log(
-            "mcp_tool_call",
-            subscription_id=sub["subscription_id"],
-            tool="flag_for_manual_review",
-            result=tool_result,
-        )
-
-    return {
-        "subscription_id": sub["subscription_id"],
-        "amount_paise": sub["amount_paise"],
-        "decline_code": sub["decline_code"],
-        "final_action": decision.final_action.value,
-        "gate_executed": decision.execute,
-        "llm_matched_policy": decision.llm_matched_policy,
-        "simulated_customer_response": sub["simulated_customer_response"],
-        "tool_result": tool_result,
-    }
 
 
 def _load_checkpoint() -> list[dict]:
@@ -234,7 +97,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Run the subscription recovery agent pipeline.")
     parser.add_argument(
         "--inject-failure",
-        choices=["llm_parse_failure", "llm_invalid_action", "unknown_decline_code"],
+        choices=[
+            "llm_parse_failure",
+            "llm_invalid_action",
+            "unknown_decline_code",
+            "repeat_attempts",
+        ],
         default=None,
         help=(
             "Force the FIRST remaining record down a real graceful-degradation "
@@ -243,7 +111,10 @@ def parse_args():
             "instead of pointing at a historical log line. "
             "'unknown_decline_code' skips the LLM/gate entirely and flags the "
             "record for manual review, simulating a decline code with no "
-            "policy entry at all. Every other "
+            "policy entry at all. 'repeat_attempts' calls the real model "
+            "normally but forces the gate's cross-run attempt-cap stopping "
+            "rule to fire (gate.py MAX_ATTEMPTS_PER_SUBSCRIPTION), demoing "
+            "compliant escalation live. Every other "
             "record in the run is unaffected and calls the real model "
             "normally."
         ),
@@ -277,6 +148,12 @@ async def run(inject_failure: str | None = None):
     }
     gate.seed_from_checkpoint(already_spent, already_seen_keys)
 
+    # Cross-run history for the attempt-cap stopping rule (gate.py
+    # MAX_ATTEMPTS_PER_SUBSCRIPTION): read once, up front, before this run
+    # appends anything new - reflects every attempt any PRIOR run already
+    # made, not just this run's in-memory state.
+    audit_history = audit.read_all()
+
     audit.log(
         "run_started",
         total_subscriptions=len(subscriptions),
@@ -294,7 +171,10 @@ async def run(inject_failure: str | None = None):
             if inject:
                 print(f"[demo] injecting '{inject}' failure for {sub['subscription_id']}")
             try:
-                result = await process_one(client, gate, audit, sub, inject_failure=inject)
+                prior_attempts = _count_prior_attempts(audit_history, sub["subscription_id"])
+                result = await process_one(
+                    client, gate, audit, sub, inject_failure=inject, prior_attempt_count=prior_attempts
+                )
             except Exception as e:
                 # A single record's unexpected failure must not take down a
                 # 150-record batch run - log it and keep going. Discovered
@@ -362,17 +242,8 @@ def write_results(results: list[dict]):
         f"- Correctly refused as fraud-flagged (never retried): **{len(fraud_refused)}**",
         f"- Correctly identified as unrecoverable (no action taken): **{len(unrecoverable)}**",
         "",
-        "## By decline code",
-        "",
-        "| Decline code | Count | Final action |",
-        "|---|---|---|",
     ]
-    seen = {}
-    for r in results:
-        key = (r["decline_code"], r["final_action"])
-        seen[key] = seen.get(key, 0) + 1
-    for (code, action), count in sorted(seen.items()):
-        lines.append(f"| {code} | {count} | {action} |")
+    lines += render_decline_code_table(results)
 
     RESULTS_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nWrote {RESULTS_PATH}")

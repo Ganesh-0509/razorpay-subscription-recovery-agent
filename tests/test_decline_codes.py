@@ -85,6 +85,48 @@ def test_config_typo_in_source_fails_loudly():
         assert "source" in str(e)
 
 
+def test_config_out_of_range_success_rate_fails_loudly():
+    # A merchant typo like "5.0" instead of "0.5" would otherwise silently
+    # corrupt the synthetic simulator (or, worse, any future real-metrics
+    # use) rather than fail at load time like allowed_action/source already do.
+    try:
+        _write_and_load({
+            "description": "test",
+            "source": "customer",
+            "allowed_action": "delayed_retry",
+            "simulated_success_rate": 5.0,
+        })
+        assert False, "expected ValueError for out-of-range simulated_success_rate"
+    except ValueError as e:
+        assert "simulated_success_rate" in str(e)
+
+
+def test_config_negative_success_rate_fails_loudly():
+    try:
+        _write_and_load({
+            "description": "test",
+            "source": "customer",
+            "allowed_action": "delayed_retry",
+            "simulated_success_rate": -0.1,
+        })
+        assert False, "expected ValueError for negative simulated_success_rate"
+    except ValueError as e:
+        assert "simulated_success_rate" in str(e)
+
+
+def test_config_non_numeric_success_rate_fails_loudly():
+    try:
+        _write_and_load({
+            "description": "test",
+            "source": "customer",
+            "allowed_action": "delayed_retry",
+            "simulated_success_rate": "high",
+        })
+        assert False, "expected ValueError for non-numeric simulated_success_rate"
+    except ValueError as e:
+        assert "simulated_success_rate" in str(e)
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     failures = 0
