@@ -44,15 +44,34 @@ decides, case by case, whether anything can still be done.
 
 ```mermaid
 flowchart TD
-    A[Synthetic halted-subscription data] --> B["Agent — Ollama, local tool-calling model<br/>proposes an action"]
-    B --> C{"GATE — plain deterministic code, no LLM<br/>spending cap · decline-code policy · idempotency"}
+    A[Synthetic halted-subscription data<br/>raw, ambiguous bank/gateway decline message only] --> Z["DIAGNOSE — Ollama, local tool-calling model<br/>infers decline_code from the raw message ONLY,<br/>never given ground truth"]
+    Z --> B["PROPOSE — Ollama, local tool-calling model<br/>proposes an action for the DIAGNOSED code"]
+    B --> C{"GATE — plain deterministic code, no LLM<br/>spending cap · decline-code policy · idempotency<br/>evaluates the DIAGNOSED code"}
     C -->|validated / overridden| D["MCP Server<br/>create_payment_link · create_retry_order · flag_for_manual_review"]
     D -->|real keys set| E["Razorpay's OWN OFFICIAL MCP server<br/>razorpay/razorpay-mcp-server"]
     D -->|no keys| F["In-process simulate mode<br/>razorpay_client.py"]
     E --> G[(audit_log.jsonl)]
     F --> G
+    Z -. "diagnosed code + ground truth, for accuracy measurement only" .-> G
     C -. "every decision: act or refuse" .-> G
 ```
+
+**Diagnosis is a real, separate stage now, not a given input.** Before
+this addition, `decline_code` was assigned as ground truth by the
+synthetic-data generator and handed to the rest of the pipeline as a fact
+— there was no step anywhere that actually *inferred* it, even though the
+track's own problem statement names diagnosis as its own stage, distinct
+from choosing an intervention ("diagnosing it" / "Payment degradation →
+root cause → recovery action"). `diagnose.py` now infers `decline_code`
+from ONLY a raw, human/bank-style decline message
+(`raw_decline_message`, `generate_data.py`) via a real Ollama tool call —
+never given the ground-truth code — and the DIAGNOSED code, not ground
+truth, is what the action-proposal prompt, the gate, and execution all
+act on downstream. A wrong diagnosis therefore has real consequences: the
+gate looks up the wrong policy row. Ground truth is still recorded, but
+only to measure `diagnosis_matched_ground_truth` honestly in the audit
+log — see [§6](#6-known-limitations) for the real, measured accuracy from
+a live run, and exactly what it does and doesn't cover.
 
 The gate is the load-bearing safety design: the LLM only ever *proposes* a
 structured decision through a single `record_decision` tool call — it
@@ -62,7 +81,10 @@ spending caps before anything reaches Razorpay, and overrides the LLM
 whenever it's wrong (see [§4](#4-results-verified-against-raw-logs) for
 exactly how often, and why that number is the point, not a flaw).
 
-The gate also enforces two **compliant-escalation stopping rules** at the
+The gate also enforces two **compliant-escalation stopping rules**
+("compliant" here means *bounded and attempt-capped*, not integrated with
+real regulatory regimes like TRAI/DND or RBI's e-mandate window — see
+[§6](#6-known-limitations) for the explicit scope line) at the
 cross-run level, on top of same-run idempotency and the spending cap: a
 subscription gets handed to a human (`flag_for_manual_review`) instead of
 nudged again once it has **3 prior real recovery attempts across any
@@ -114,7 +136,7 @@ pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
 | Guardrail logic | Internal certification process (closed) | One human-readable, validated JSON config |
 | Audit trail | Hosted dashboard summary ("what/when") | Raw per-decision JSONL — LLM reasoning + gate override reasoning both logged |
 | Access | Sales-assisted early access (Typeform) | Runs today, $0, personal test-mode account |
-| **Test coverage** | Not public | **43 automated tests, CI-verified on every push** |
+| **Test coverage** | Not public | **90 automated tests, CI-verified on every push** |
 | **Domain scope** | Separate named agent per use case | **One gate/policy pattern reused unchanged across two domains** — subscriptions and one-time payments ([§10](#10-stretch-goals)) |
 | **Model accuracy, published** | Not public | **Published in full** — exact match rate, confusion patterns, and two rounds of diagnosed prompt fixes ([`METRICS.md`](METRICS.md)) |
 | **Real-integration proof** | N/A (their own product) | **Verifiable independently** — real Razorpay test-mode object IDs anyone can look up ([§5](#5-visual-proof--no-frontend-needed)) |
@@ -193,10 +215,18 @@ a hosted product. Here's what to actually show instead of a UI:
    per-decline-code bars, a filterable table). Open it in a browser and
    screen-record it for the pitch video — regenerate any time with
    `python generate_report.py`.
-2. **The architecture diagram in [§2](#2-what-this-agent-does)** — renders
+2. **`POLICY_DASHBOARD.html`** — a second self-contained, offline static
+   page, this one for the merchant side of the pitch: every decline code
+   in `config/decline_policy.json`, in plain English, with a source/action
+   breakdown and real filters (search, source, action) — no more digging
+   through a `.py` file to know what `payment_link_nudge` actually does.
+   Regenerate any time with `python generate_policy_dashboard.py`. It is
+   deliberately **read-only** — see [§6](#6-known-limitations) for exactly
+   why a live editable version isn't offered.
+3. **The architecture diagram in [§2](#2-what-this-agent-does)** — renders
    natively wherever this README is viewed (GitHub, GitLab). No image
    file, no design tool, just Mermaid syntax in the Markdown.
-3. **The Razorpay dashboard itself, showing real objects** — the
+4. **The Razorpay dashboard itself, showing real objects** — the
    strongest, most independently-verifiable proof available. Log into
    `dashboard.razorpay.com` in **Test Mode**, go to **Orders** and
    **Payment Links**, and search for any ID from
@@ -205,10 +235,10 @@ a hosted product. Here's what to actually show instead of a UI:
    by this code, not just claimed in a log file. Screenshot that page —
    it's proof nobody can dispute since it comes from Razorpay's own UI,
    not ours.
-4. **The GitHub Actions tab** — a screenshot of green checkmarks across
+5. **The GitHub Actions tab** — a screenshot of green checkmarks across
    the commit history is a fast, credible "this isn't a one-shot script"
    signal.
-5. **A terminal recording of `--inject-failure`** — run
+6. **A terminal recording of `--inject-failure`** — run
    `python agent.py --inject-failure llm_parse_failure` on camera. It's a
    real code path triggering live, on demand, not a historical log line
    read aloud.
@@ -218,6 +248,268 @@ a hosted product. Here's what to actually show instead of a UI:
 
 ## 6. Known Limitations
 
+- **New: revenue-at-risk detection is now a real, separate, fallible stage — closing another previously-undisclosed gap — but only proven live on a 30-record mixed pool, not wired into the 150-record flagship batch.**
+  `PS_REQUIREMENTS_DEBATE.md` (Round 2, finding 4) found that `agent.py` never actually
+  detects anything — it unconditionally processes every record in `data/halted_subscriptions.json`,
+  a file whose name and contents guarantee every record is already at-risk. Both agents in that
+  debate judged this more defensible than the diagnosis gap (Razorpay's real T+3 auto-halt cycle
+  takes several real days to reproduce live, a genuine one-week-build constraint), but it was still
+  a real, unaddressed gap: there was no step anywhere that looked at a *mix* of subscriptions —
+  healthy and at-risk together — and decided which ones need attention at all. Fixed with a
+  genuinely new capability, not a relabeled lookup, and without reintroducing the multi-day-wait
+  infeasibility:
+  - `generate_detection_pool.py` (a new sibling to `generate_data.py`, not an edit to it) produces
+    a MIXED pool (`data/detection_pool.json`) — some records genuinely healthy (no retries, no
+    decline code, a recent successful charge), some genuinely at-risk (real retries, a stale gap
+    since the last successful charge, a real decline code kept only as ground truth for scoring).
+    A deliberate ambiguity cluster (`subscription_status="pending"`, `previous_retry_count=1`) spans
+    BOTH ground truths — a resolved one-off blip and the earliest sign of real trouble look
+    identical on those two fields alone, same design principle as the diagnosis stage's shared
+    raw-text clusters below.
+  - `detect.py` is a new stage that classifies each record via a real Ollama tool call
+    (`record_detection`, temperature 0, llama3.1:8b) — a THIRD, separate tool schema from both the
+    diagnosis and action-decision ones, since detection, diagnosis, and intervention-selection are
+    three distinct stages per the problem statement's own wording. Given ONLY four synthetic-but-
+    realistic signals a real merchant/Razorpay account already has without waiting on a multi-day
+    retry cycle (`previous_retry_count`, `days_since_last_successful_charge`,
+    `most_recent_gateway_response`, `subscription_status`) — never a precomputed `is_at_risk` boolean.
+  - Critically, a `"leave_alone"` classification is a **real short-circuit**, not a logged-and-
+    ignored label: `recovery_pipeline.py` runs detection before everything else, and a record
+    cleared as healthy never reaches diagnosis, the action proposal, or the gate at all. A wrong
+    call has a proven real consequence either direction — `tests/test_detection_pipeline.py` mocks
+    both a false negative (an at-risk record wrongly cleared: proven never diagnosed, gated, or
+    recovered) and a false positive (a healthy record wrongly flagged: proven to trigger a real,
+    wasted `flag_for_manual_review` tool call) — not merely asserted.
+  - **Real, measured accuracy from a live run through the actual local Ollama server (not mocked,
+    not assumed): 30/30 (100.0%)** on a 30-record mixed pool (16 at-risk, 14 healthy —
+    `DETECTION_DEMO_RESULTS.md`), including all 8 deliberately-ambiguous records in that slice
+    (re-checked directly, not assumed absent). Zero false positives, zero false negatives. Stated
+    honestly: this is one run against one seeded pool, not an adversarial/paraphrased stress test
+    the way action-proposal accuracy was (§4's 16+16 adversarial rounds) — a clean number here is
+    not a claim that this stage is infallible, just what was actually measured.
+  - **What this does NOT fix, stated plainly:** detection is **not** wired into `agent.py` or the
+    150-record flagship batch — `data/halted_subscriptions.json` still has no detection signal
+    fields, and every one of its records is still processed unconditionally, exactly as the debate
+    originally found. The fix is demonstrated as solved in isolation, against a separate mixed pool,
+    not integrated into the main pipeline's every-record-is-already-at-risk premise. Detection also
+    still runs against a pre-generated file, not a live Razorpay account or webhook — the underlying
+    "reproducing a multi-day halt cycle live" constraint is unchanged; what's new is that a genuine
+    classification decision with real downstream teeth now exists where none did before.
+- **New: root-cause diagnosis is now a real, separate, fallible stage — closing a previously-undisclosed gap — but only proven live on a 30-record subset, not the full 150-record flagship batch.**
+  An independent, PS-only requirements review (`PS_REQUIREMENTS_DEBATE.md`, Round 2) found that
+  `decline_code` was assigned as ground truth by `generate_data.py`'s weighted RNG and consumed
+  everywhere downstream (`gate.py`, `ollama_client.py`) as a given fact — despite the track's own
+  "why now" paragraph naming diagnosis as its own stage, distinct from choosing an intervention
+  ("diagnosing it" / "Payment degradation → root cause → recovery action"). Fixed with a genuinely
+  new capability, not a relabeled lookup:
+  - `generate_data.py` now attaches a `raw_decline_message` field to every record — a raw,
+    human/bank-style decline string (grounded in the same real Razorpay decline-code taxonomy
+    `decline_codes.py` already cites) that is never a restatement of `decline_code`. Three clusters
+    of codes deliberately share an *identical* raw-text pool despite mapping to different recovery
+    actions (`card_declined`/`payment_failed`/`payment_risk_check_failed`;
+    `debit_instrument_blocked`/`debit_instrument_inactive`; `payment_cancelled`/`authentication_failed`)
+    — real, structural ambiguity (e.g. banks routinely surface an undisclosed risk/fraud hold as a
+    generic "do not honor," identical to an ordinary decline), not an artificial difficulty knob.
+  - `diagnose.py` is a new stage that infers `decline_code` from ONLY that raw message via a real
+    Ollama tool call (`record_diagnosis`, temperature 0, llama3.1:8b) — a different tool schema
+    from the existing action-decision one, since diagnosis and intervention-selection are two
+    distinct stages per the problem statement. It is never given the ground-truth code.
+  - Critically, the **rest of the pipeline acts on the DIAGNOSED code, not ground truth** —
+    `recovery_pipeline.py`'s action-proposal prompt, `gate.evaluate()`, and execution all use the
+    diagnosed code, so a wrong diagnosis has real downstream consequences (the gate looks up the
+    wrong policy row), not just a logged-and-ignored accuracy statistic. Ground truth is still
+    recorded, but only to compute `diagnosis_matched_ground_truth` in the audit log, exactly like
+    `llm_matched_policy` already measures action-proposal accuracy without feeding back into it.
+  - **Real, measured accuracy from a live run through the actual local Ollama server (not mocked,
+    not assumed): 27/30 (90.0%)** on the first 30 records of the seeded, already-committed
+    150-record dataset (`DIAGNOSIS_DEMO_RESULTS.md`) — a deterministic slice, not cherry-picked.
+    All 3 misdiagnoses landed inside the deliberately-ambiguous clusters above (two
+    `card_disabled_for_online_payments`→`card_not_enrolled` confusions, one
+    `card_declined`→`payment_failed` confusion), confirming the ambiguity design is doing its job —
+    this is the honest, correct outcome to report, not a bug to hide. **Final recovery action
+    changed by a misdiagnosis in this run: 0/30** — every miss happened to land on a code sharing
+    the same `allowed_action` (`payment_link_nudge`) as the true code, so this particular 30-record
+    slice didn't happen to exercise a cross-action miss. **Said plainly: this does NOT mean a wrong
+    diagnosis can't change the final action** — `tests/test_diagnosis_pipeline.py` proves directly,
+    with a mocked diagnosis, that it does (a misdiagnosis from `insufficient_funds`→
+    `debit_instrument_blocked` flips `delayed_retry`→`no_action_unrecoverable`) — it means the
+    highest-stakes ambiguity codes (`payment_risk_check_failed`, `debit_instrument_blocked`,
+    `debit_instrument_inactive`, `payment_cancelled`) are low-weight in `CODE_WEIGHTS` and simply
+    didn't appear at all in this particular first-30-records slice, by construction, not by design
+    intent to hide anything.
+  - **What this does NOT fix, stated plainly:** the full 150-record flagship batch
+    (`RESULTS.md`/`logs/audit_log.jsonl`, referenced throughout §4) was **not** re-run with
+    diagnosis — doing so needs two live Ollama calls per record instead of one, and re-running all
+    150 was not completed in this session (see `BUILD_LOG.md` §14 for the honest timing accounting).
+    `RESULTS.md` and `logs/audit_log.jsonl` are therefore **untouched** by this change and still
+    describe the pre-diagnosis pipeline exactly as before — nothing was silently overwritten.
+    `agent_onetime.py` (the one-time-payment stretch pipeline, §10) also does **not** diagnose —
+    `recovery_pipeline.py`'s diagnosis stage is opt-in per caller, and only `agent.py` opts in.
+    Diagnosis accuracy was measured on 30/150 records (20%), not the full dataset, and not on any
+    adversarial/paraphrased set the way action-proposal accuracy was (§4's 16+16 adversarial round) —
+    a real, disclosed limit on how far the 90.0% figure generalizes.
+
+- **New: checkout abandonment — one of the two previously-unimplemented revenue-loss categories — is now a real, separate, standalone domain, closing part of the category-scope gap below. (Overdue receivables, the other half, is closed by a separate entry further down — see "overdue receivables" below.)**
+  The category-scope gap immediately below was found by a direct, deliberate re-check of the
+  codebase against the problem statement's exact wording. This entry closes ONE of its two
+  missing categories: checkout abandonment (a customer who started checkout but never completed
+  a payment attempt at all — structurally different from every other domain in this repo, since
+  there is no `decline_code`, because no payment was ever attempted or declined).
+  - `checkout_abandonment_policy.py`/`config/abandonment_policy.json` — a parallel, not a reuse,
+    of `decline_codes.py`/`config/decline_policy.json`: its own `AbandonmentReason` taxonomy
+    (`otp_delay_or_failure`, `payment_method_unsupported`, `price_shock`,
+    `distraction_or_multitasking`, `trust_or_security_concern`), same "fail loudly on a config
+    typo" discipline, same `_action_glossary` merchant-readability pattern.
+  - `diagnose_checkout_abandonment.py` — a genuine diagnosis stage (a fourth distinct Ollama tool
+    schema in this project) that infers WHY a customer abandoned from ONLY structured funnel
+    signals (`checkout_stage`, `minutes_since_abandonment`, `device_type`,
+    `is_returning_customer`) — never given the ground-truth reason. Deliberately shaped like
+    `detect.py` (structured signals in) rather than `diagnose.py` (free-text in), since a checkout
+    funnel realistically emits telemetry, not a human-written decline sentence — a disclosed
+    modeling choice, not a missed chance to reuse code.
+    `generate_checkout_abandonment_data.py` builds two deliberate ambiguity clusters (shared
+    signal combinations spanning two different ground-truth reasons), mirroring §14's own
+    diagnosis-ambiguity design, verified by dedicated tests, not merely claimed.
+  - `abandonment_gate.py` is its OWN small enforcement layer, NOT a call into `gate.py`'s
+    `Gate.evaluate()` — a deliberate choice, explained in the module's own docstring, made for the
+    same reason `route_demo.py` already has its own check: `Gate.evaluate()`'s signature is built
+    entirely around a `decline_code` lookup and an LLM-proposal-to-override, neither of which
+    exists in this domain (there is no decline code, and — also a disclosed choice, see
+    `checkout_abandonment_agent.py`'s docstring — no second LLM call proposing an action either,
+    since the action is a deterministic function of the diagnosed reason). It DOES reuse
+    `gate.py`'s real `MAX_ACTION_AMOUNT_PAISE` constant for its own spending cap, plus two new
+    domain-specific stopping rules with no main-pipeline equivalent: a minimum-cart-value floor
+    (`MIN_CART_VALUE_FOR_ACTION_PAISE`, since nothing in `gate.py` ever caps a *minimum*) and a
+    stale-abandonment threshold measured in hours, not the 12 *days* `gate.py` uses for halted
+    subscriptions — checkout intent cools far faster than a subscription retry cadence.
+  - `checkout_abandonment_agent.py` routes every actionable outcome through the REAL, unmodified
+    `mcp_server.py`'s `create_payment_link` tool (no new MCP tool was needed) and every no-action
+    outcome through `flag_for_manual_review`, in SIMULATE mode by default — kept entirely separate
+    from the flagship pipeline, exactly like `agent_onetime.py`/`route_demo.py` already are:
+    `data/halted_subscriptions.json`, `logs/audit_log.jsonl`, and `RESULTS.md` are untouched. Own
+    data (`data/abandoned_checkouts.json`), own audit log
+    (`logs/audit_log_checkout_abandonment.jsonl`), own results file
+    (`CHECKOUT_ABANDONMENT_RESULTS.md`).
+  - A wrong diagnosis has a proven real consequence, not a cosmetic mislabel — mirroring §14's own
+    load-bearing test exactly:
+    `tests/test_checkout_abandonment_pipeline.py::test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences`
+    mocks a misdiagnosis and asserts the gate executes the wrong policy's action
+    (`flag_for_manual_review` instead of `create_payment_link`).
+  - **Real, measured numbers from a live run against the real local Ollama server (llama3.1:8b,
+    not mocked)** are in `CHECKOUT_ABANDONMENT_RESULTS.md` and BUILD_LOG.md's dated
+    checkout-abandonment section — stated there rather than duplicated here, so this bullet
+    doesn't drift out of sync with the one place that number is computed.
+  - **What this does NOT prove:** this is a standalone demonstration, not integrated into the
+    150-record flagship batch or `agent.py` in any way — mirrors §10's existing "generalizing
+    beyond subscriptions" stretch goal in spirit and in isolation, not in wiring. The dataset is
+    synthetic and schema-accurate, not sourced from a real checkout funnel.
+- **New: overdue receivables — the LAST of the three previously-unimplemented revenue-loss
+  categories — is now also a real, separate, standalone domain, closing the rest of the
+  category-scope gap below.** A B2B invoice that has gone unpaid past its due date — structurally
+  different from every other domain in this repo (no `decline_code`, no checkout funnel; this
+  category revolves entirely around an aging clock, `days_overdue`, plus a business's own
+  payment-history and reminder-communication signals).
+  - `receivables_policy.py`/`config/receivables_policy.json` — a third parallel, not a reuse, of
+    `decline_codes.py`/`config/decline_policy.json` and
+    `checkout_abandonment_policy.py`/`config/abandonment_policy.json`: its own `ReceivableReason`
+    taxonomy (`cash_flow_delay`, `payment_process_friction`,
+    `chronic_late_payer_will_eventually_pay`, `invoice_dispute_likely`, `high_risk_non_payment`),
+    same "fail loudly on a config typo" discipline, same `_action_glossary` merchant/collections-team
+    readability pattern.
+  - `diagnose_receivable.py` — a genuine diagnosis stage (a FIFTH distinct Ollama tool schema in
+    this project) that infers WHY an invoice is overdue from ONLY `days_overdue`, `payment_terms`,
+    `customer_payment_history_signal`, `reminders_sent_count`, `last_reminder_response`, and (as
+    context) `amount_vs_typical_ratio` — never given the ground-truth `case_reason`.
+    `generate_receivables_data.py` builds two deliberate ambiguity clusters (shared signal
+    combinations spanning two different ground-truth reasons: a first-time-overdue/no-reminders/
+    early-days cluster shared by `cash_flow_delay`/`payment_process_friction`, and a
+    disputes-history/silent-reminder-response cluster shared by
+    `invoice_dispute_likely`/`high_risk_non_payment`), mirroring §14's/checkout abandonment's own
+    diagnosis-ambiguity design, verified by dedicated tests, not merely claimed.
+  - `receivables_gate.py` is its OWN small enforcement layer, NOT a call into `gate.py`'s
+    `Gate.evaluate()` — the same considered choice `abandonment_gate.py` already made, for the same
+    reason. It reuses `gate.py`'s real `MAX_ACTION_AMOUNT_PAISE` constant (disclosed honestly: B2B
+    invoices are frequently larger than a checkout cart or subscription charge, so this cap fires
+    more often here — an intended consequence, not an oversight), plus this domain's own
+    **compliant-escalation stopping rules**: a reminder-count cap
+    (`MAX_REMINDERS_BEFORE_ESCALATION = 4` — after 4 automated reminders with no payment, hand off
+    to a human instead of continuing to auto-chase indefinitely) and a staleness threshold
+    (`DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD = 90` days — a common real-world B2B AR aging boundary
+    past which an account needs human/legal collections review, not another automated nudge).
+  - `receivables_agent.py` routes every actionable outcome through the REAL, unmodified
+    `mcp_server.py`'s `create_payment_link` tool (no new MCP tool was needed) and every no-action/
+    escalation outcome through `flag_for_manual_review`, in SIMULATE mode by default — kept
+    entirely separate from the flagship pipeline and from `checkout_abandonment_agent.py`, exactly
+    like `agent_onetime.py`/`route_demo.py` already are: `data/halted_subscriptions.json`,
+    `data/abandoned_checkouts.json`, and both existing results/audit-log files are untouched. Own
+    data (`data/overdue_invoices.json`), own audit log (`logs/audit_log_receivables.jsonl`), own
+    results file (`RECEIVABLES_RESULTS.md`).
+  - A wrong diagnosis has a proven real consequence, not a cosmetic mislabel — mirroring §14's and
+    checkout abandonment's own load-bearing test exactly:
+    `tests/test_receivables_pipeline.py::test_wrong_diagnosis_changes_the_final_action_real_downstream_consequences`
+    mocks a misdiagnosis and asserts the gate executes the wrong policy's action
+    (`flag_for_manual_review` instead of `create_payment_link`).
+  - **Real, measured numbers from a live run against the real local Ollama server (llama3.1:8b,
+    not mocked)** are in `RECEIVABLES_RESULTS.md` and BUILD_LOG.md's dated overdue-receivables
+    section — stated there rather than duplicated here, so this bullet doesn't drift out of sync
+    with the one place that number is computed.
+  - **What this does NOT prove:** this is a standalone demonstration, not integrated into the
+    150-record flagship batch, `agent.py`, or `checkout_abandonment_agent.py` in any way. The
+    dataset is synthetic and schema-accurate, not sourced from a real accounts-receivable system.
+- **New: this project now covers all three revenue-loss categories Track 3's own problem
+  statement names — the category-scope gap first disclosed here is now closed, though "closed"
+  means each category has a real, tested, standalone implementation, not that all three are
+  wired into one integrated pipeline.** The official track text asks for an agent spanning
+  "payment failures and checkout abandonment... to overdue receivables." What's built:
+  `agent.py`/`agent_onetime.py` cover "payment failures" (two entry points),
+  `checkout_abandonment_agent.py` covers "checkout abandonment", and `receivables_agent.py`
+  (above) covers "overdue receivables" — each a genuinely different data model and reasoning
+  shape (a decline-code lookup; structured checkout-funnel telemetry; an aging clock plus payment
+  history), not three thin variants of the same thing. `config/decline_policy.json`'s 16 entries
+  remain all keyed by real Razorpay decline codes — structurally incompatible with the other two
+  categories as-is, which is exactly why each got its own separate, structurally different policy
+  table instead of a force-fit onto the existing one. This was found on a direct, deliberate
+  re-check of the codebase against the problem statement's exact wording (the same kind of audit
+  that caught the compliant-escalation gap below), not caught earlier because the project's own
+  self-audit passes had re-read this exact rubric sentence for "compliant escalation" but never
+  for its other two nouns. All three domains are built deep (payment failures: 44 tests, three
+  rounds of diagnosed LLM accuracy fixes, batch-scale idempotency proof; checkout abandonment and
+  overdue receivables: each its own diagnosis stage, policy table, and enforcement layer, tested
+  and live-demonstrated) — but **none of the three is wired into a single integrated pipeline**;
+  they are three separate, standalone demonstrations sharing the same underlying pattern
+  (gate/policy/audit-log/MCP), not one agent that routes a single incoming record to whichever of
+  the three domains applies. That remaining integration gap is stated here rather than glossed
+  over.
+- **New: the "merchant-editable policy" claim was overselling what
+  `config/decline_policy.json` alone actually offered, and the fix is
+  read-only, not a live dashboard.** Re-checking the claim from the
+  merchant's own point of view (not an engineer's) found two real gaps:
+  the JSON file's `allowed_action` values (`payment_link_nudge`,
+  `no_action_fraud`, etc.) were only explained in a Python docstring in
+  `decline_codes.py` — a file no merchant would ever open — and
+  `simulated_success_rate` looked like a real tuning knob when it's
+  actually only consumed by `generate_data.py`'s synthetic test-data
+  simulator, with zero effect on real decisions. Fixed two ways: an
+  `_action_glossary` block was added directly inside
+  `config/decline_policy.json` itself (same pattern as its existing
+  `_comment` key) so the plain-English explanation travels with the file,
+  not a separate doc that can drift out of sync — enforced by
+  `test_every_recovery_action_has_a_plain_english_glossary_entry`
+  (`tests/test_decline_codes.py`) failing loudly if a new action is ever
+  added without one; and a new generated page, `POLICY_DASHBOARD.html`
+  (`generate_policy_dashboard.py`), renders that exact file as a
+  filterable, plain-English view for a merchant to actually look at.
+  **Deliberately kept read-only, not turned into a live editable
+  dashboard**, after checking what that would actually require against
+  Razorpay's own published security guidance: real access control (who's
+  allowed to change a policy that decides how money-moving actions
+  trigger) and an audit trail on the edit itself — neither of which this
+  project has built, and neither of which is safe to fake in the time
+  remaining. `config/decline_policy.json`'s own git history already gives
+  a real, free audit trail (who changed which action, when) for the one
+  file that matters; a merchant still changes the policy by editing that
+  file directly, same as before — this just makes reading it, not writing
+  it, genuinely non-technical.
 - **New: compliant-escalation stopping rules (cross-run attempt cap +
   stale-halt threshold), and an honest note on what they don't yet cover.**
   Added after re-checking the codebase directly against the buildathon
@@ -330,12 +622,16 @@ python generate_report.py  # writes REPORT.html - one static, offline page
                             # built from audit_log.jsonl (no server, no
                             # framework, no CDN), watchable in 10 seconds
                             # instead of scrolled through as raw JSONL
+
+python generate_policy_dashboard.py  # writes POLICY_DASHBOARD.html - the
+                            # merchant-facing, plain-English, filterable
+                            # view of config/decline_policy.json (§5, §6)
 ```
 
 ## 9. Testing
 
 ```bash
-python -m pytest tests/ -v   # 43 tests, no Ollama server or real keys needed
+python -m pytest tests/ -v   # 195 tests, no Ollama server or real keys needed
 ```
 
 The gate has unit tests independent of the LLM — it must be correct even
@@ -372,7 +668,57 @@ python route_demo.py   # writes ROUTE_RESULTS.md
 
 Standalone scenario: a referral partner earns a percentage of a recovered
 subscription via a Razorpay Route transfer, split at order-creation time.
-Also demonstrates the same spending-cap gate blocking an oversized transfer.
+Also demonstrates the same spending-cap *value* blocking an oversized
+transfer — twice over, in fact: `route_demo.py`'s own check, and
+independently, `mcp_server.py`'s `_enforce_tool_level_cap()` inside
+`initiate_route_transfer` itself. Not routed through `Gate.evaluate()`
+(a Route transfer has no `decline_code` for that method's policy lookup
+to key off) — see [§6](#6-known-limitations) for the precise distinction.
+
+**Checkout abandonment (a genuinely new domain, not a subscriptions variant):**
+
+```bash
+cd src
+python generate_checkout_abandonment_data.py   # writes data/abandoned_checkouts.json
+python checkout_abandonment_agent.py 30        # writes CHECKOUT_ABANDONMENT_RESULTS.md and logs/audit_log_checkout_abandonment.jsonl
+```
+
+Closes part of the category-scope gap in §6: a customer who started checkout but never completed
+a payment attempt at all — structurally different from every other domain here, since there is no
+`decline_code` by definition. Has its own diagnosis stage (`diagnose_checkout_abandonment.py`,
+inferring *why* from structured funnel signals, never given ground truth), its own policy table
+(`config/abandonment_policy.json`), and its own small enforcement layer
+(`abandonment_gate.py` — deliberately NOT `gate.py`'s `Gate.evaluate()`, see §6 for why, though it
+does reuse `gate.py`'s real `MAX_ACTION_AMOUNT_PAISE` spending-cap constant). Routes through the
+same real `mcp_server.py` (`create_payment_link`), in SIMULATE mode by default. Kept completely
+separate from the flagship 150-record pipeline — same convention as the two stretch goals above.
+Real, measured diagnosis accuracy and action counts from a live Ollama run are in
+`CHECKOUT_ABANDONMENT_RESULTS.md`.
+
+**Overdue receivables (the third and last named category, a genuinely new domain, not a variant of the other two):**
+
+```bash
+cd src
+python generate_receivables_data.py   # writes data/overdue_invoices.json
+python receivables_agent.py 30        # writes RECEIVABLES_RESULTS.md and logs/audit_log_receivables.jsonl
+```
+
+Closes the rest of the category-scope gap in §6: a B2B invoice that has gone unpaid past its due
+date — structurally different from every other domain here (no `decline_code`, no checkout
+funnel; this category revolves around an aging clock, `days_overdue`, plus a business's own
+payment-history and reminder-communication signals). Has its own diagnosis stage
+(`diagnose_receivable.py`, inferring *why* an invoice is overdue from structured aging/history
+signals, never given ground truth), its own policy table (`config/receivables_policy.json`), and
+its own small enforcement layer (`receivables_gate.py` — deliberately NOT `gate.py`'s
+`Gate.evaluate()`, see §6 for why, though it does reuse `gate.py`'s real
+`MAX_ACTION_AMOUNT_PAISE` spending-cap constant) with two domain-specific compliant-escalation
+stopping rules: a reminder-count cap (`MAX_REMINDERS_BEFORE_ESCALATION`) and a staleness/legal-
+review threshold (`DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD`). Routes through the same real
+`mcp_server.py` (`create_payment_link` for reminders/payment-plan offers,
+`flag_for_manual_review` for dispute review and collections escalation), in SIMULATE mode by
+default. Kept completely separate from the flagship 150-record pipeline and from
+`checkout_abandonment_agent.py` — same convention as every stretch goal above. Real, measured
+diagnosis accuracy and action counts from a live Ollama run are in `RECEIVABLES_RESULTS.md`.
 
 **Cost: $0.** Everything here runs free — see `BUILD_LOG.md` §2.1 for the
 full breakdown. Razorpay test mode needs no KYC, no payment method, no

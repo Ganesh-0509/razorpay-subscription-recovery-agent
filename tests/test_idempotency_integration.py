@@ -50,7 +50,22 @@ def _run_two_through_one_shared_gate(sub_a: dict, sub_b: dict):
             return first, second
 
     try:
-        with patch.object(mcp_server, "SIMULATE", True):
+        # Patching only the module-level SIMULATE name is NOT sufficient
+        # when real rzp_test_ keys are present in .env: mcp_server._rp is
+        # a RazorpayClient instance constructed once at mcp_server.py
+        # import time, and its own create_payment_link/create_retry_order
+        # methods branch on the instance's `self.simulate` (bound at that
+        # construction), not on this module-level name - discovered while
+        # building the diagnosis feature (BUILD_LOG.md §14) when this
+        # exact gap let a live run place a real API call by accident.
+        # first["final_action"] below is "delayed_retry" (a real
+        # money-moving action, not flag_for_manual_review), so this test
+        # was silently placing a real create_retry_order call whenever it
+        # ran locally with real keys configured - patched here too so this
+        # file's own docstring promise ("a test run must never place a
+        # real API call as a side effect") is actually true.
+        with patch.object(mcp_server, "SIMULATE", True), \
+             patch.object(mcp_server._rp, "simulate", True):
             first, second = asyncio.run(_run())
         events = audit.read_all()
         return first, second, events

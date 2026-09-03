@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from decline_codes import DECLINE_CODES, RecoveryAction, _load_decline_codes, get_decline_code
+from decline_codes import DECLINE_CODES, POLICY_PATH, RecoveryAction, _load_decline_codes, get_decline_code
 
 
 def test_every_code_has_a_valid_recovery_action():
@@ -36,6 +36,20 @@ def test_actionable_policies_have_a_plausible_success_rate():
     for code, info in DECLINE_CODES.items():
         if info.allowed_action not in (RecoveryAction.NO_ACTION_FRAUD, RecoveryAction.NO_ACTION_UNRECOVERABLE):
             assert 0.0 < info.simulated_success_rate <= 1.0, f"{code} has an implausible success rate"
+
+
+def test_every_recovery_action_has_a_plain_english_glossary_entry():
+    # POLICY_DASHBOARD.html (generate_policy_dashboard.py) and the config
+    # file's own "_action_glossary" exist so a merchant never has to open
+    # a .py file to know what an allowed_action actually does. If a new
+    # RecoveryAction is ever added without a matching glossary entry, that
+    # promise silently breaks - catch it here instead of a merchant finding
+    # a blank explanation.
+    raw = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    glossary = raw.get("_action_glossary", {})
+    for action in RecoveryAction:
+        assert action.value in glossary, f"{action.value} has no _action_glossary entry in {POLICY_PATH.name}"
+        assert glossary[action.value].strip(), f"{action.value}'s _action_glossary entry is empty"
 
 
 def test_unknown_code_raises_keyerror():

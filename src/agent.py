@@ -1,19 +1,28 @@
 """
 The orchestrator. For each halted subscription:
-  1. Ask the local Ollama model to PROPOSE an action (ollama_client).
-  2. Send that proposal through the GATE - deterministic, never trusts the
-     model (gate.py). The gate can override the model entirely.
-  3. If the gate allows a real action, execute it through the MCP SERVER
+  1. DIAGNOSE a decline_code from the raw, ambiguous bank/gateway message
+     (diagnose.py) - never handed the ground-truth decline_code. See
+     BUILD_LOG.md §14 for why this stage exists and what it replaced.
+  2. Ask the local Ollama model to PROPOSE an action for the DIAGNOSED
+     code (ollama_client).
+  3. Send that proposal through the GATE - deterministic, never trusts the
+     model (gate.py). The gate evaluates the DIAGNOSED code too, so a
+     wrong diagnosis can change the final action. The gate can also
+     override the model entirely regardless of diagnosis.
+  4. If the gate allows a real action, execute it through the MCP SERVER
      (mcp_server.py) via a real in-process MCP Client/Server round-trip.
-  4. Log every step to the audit trail (audit_log.py), whether allowed or
-     denied.
+  5. Log every step to the audit trail (audit_log.py), whether allowed or
+     denied - including both the diagnosed code and the ground-truth code,
+     so diagnosis accuracy can be measured honestly.
 
-The actual per-record propose/gate/execute/audit sequence lives in
+The actual per-record diagnose/propose/gate/execute/audit sequence lives in
 recovery_pipeline.py, shared with agent_onetime.py - this file supplies the
 subscription-specific configuration (field names, situation text) plus
-everything agent_onetime.py deliberately doesn't have: checkpoint/resume
-and the --inject-failure CLI. See recovery_pipeline.py's docstring and
-BUILD_LOG.md §12 for why this was extracted.
+everything agent_onetime.py deliberately doesn't have: checkpoint/resume,
+the --inject-failure CLI, and (so far) the diagnosis stage itself - see
+recovery_pipeline.py's docstring for why agent_onetime.py doesn't diagnose.
+See recovery_pipeline.py's docstring and BUILD_LOG.md §12/§14 for why this
+was extracted.
 
 Note on transport: the MCP Client below is constructed directly against the
 in-process `server` object, which is a supported mode of the official SDK
@@ -77,6 +86,11 @@ async def process_one(
         record_label="Subscription",
         inject_failure=inject_failure,
         prior_attempt_count=prior_attempt_count,
+        # generate_data.py now attaches a raw, ambiguous bank/gateway
+        # decline message per record - this is what makes root-cause
+        # diagnosis (diagnose.py) actually run for this pipeline instead
+        # of being skipped. See recovery_pipeline.py's docstring.
+        raw_signal_field="raw_decline_message",
     )
 
 
@@ -102,6 +116,7 @@ def parse_args():
             "llm_invalid_action",
             "unknown_decline_code",
             "repeat_attempts",
+            "diagnosis_parse_failure",
         ],
         default=None,
         help=(
@@ -114,9 +129,13 @@ def parse_args():
             "policy entry at all. 'repeat_attempts' calls the real model "
             "normally but forces the gate's cross-run attempt-cap stopping "
             "rule to fire (gate.py MAX_ATTEMPTS_PER_SUBSCRIPTION), demoing "
-            "compliant escalation live. Every other "
-            "record in the run is unaffected and calls the real model "
-            "normally."
+            "compliant escalation live. 'diagnosis_parse_failure' forces the "
+            "new root-cause diagnosis stage (diagnose.py) to return no usable "
+            "tool call, demoing that diagnosis failing gracefully falls back "
+            "to manual review instead of guessing a decline_code - the "
+            "action-proposal LLM call is never reached for this record. "
+            "Every other record in the run is unaffected and calls the real "
+            "model normally."
         ),
     )
     return parser.parse_args()
@@ -189,6 +208,8 @@ async def run(inject_failure: str | None = None):
                     "subscription_id": sub["subscription_id"],
                     "amount_paise": sub["amount_paise"],
                     "decline_code": sub["decline_code"],
+                    "diagnosed_decline_code": None,
+                    "diagnosis_matched_ground_truth": None,
                     "final_action": "no_action_unrecoverable",
                     "gate_executed": False,
                     "llm_matched_policy": False,

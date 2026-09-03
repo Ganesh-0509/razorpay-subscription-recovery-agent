@@ -7,7 +7,10 @@ Kept as a separate, standalone script rather than woven into the main
 scenario (a referral partner earning a share of a recovered payment) and
 mixing it into the already-verified main pipeline would risk destabilizing
 results that are already real and tested. This runs independently, through
-the same MCP server / gate / audit-log pattern as the main pipeline.
+the same MCP server / audit-log pattern as the main pipeline, plus the same
+spending-cap *value* gate.py defines (see the comment in run() below for
+exactly what "same" does and doesn't mean here - this file does not call
+Gate.evaluate()).
 
 Scenario: some recovered subscriptions came through a referral partner
 (e.g. an affiliate who brought that customer to the merchant). When one of
@@ -23,7 +26,7 @@ from pathlib import Path
 from mcp import Client
 
 from audit_log import AuditLogger
-from gate import Gate, MAX_ACTION_AMOUNT_PAISE
+from gate import MAX_ACTION_AMOUNT_PAISE
 from mcp_server import PARTNER_LINKED_ACCOUNT_ID, server as mcp_server
 
 AUDIT_PATH = Path(__file__).parent.parent / "logs" / "audit_log.jsonl"
@@ -43,7 +46,6 @@ REFERRED_RECOVERIES = [
 
 
 async def run():
-    gate = Gate()
     audit = AuditLogger(AUDIT_PATH)
     audit.log("route_demo_started", total=len(REFERRED_RECOVERIES))
 
@@ -52,11 +54,16 @@ async def run():
         for rec in REFERRED_RECOVERIES:
             partner_share = int(rec["amount_paise"] * PARTNER_SHARE_PCT)
 
-            # Route transfers are still a money action - still gated. Reuse
-            # the same spending-cap check the main pipeline uses (policy/
-            # idempotency checks don't apply the same way here since this
-            # isn't a decline-code-driven decision, so call the cap check
-            # directly rather than through Gate.evaluate()'s full policy path).
+            # Route transfers are still a money action - still gated, but not
+            # through Gate.evaluate(): a Route transfer has no decline_code,
+            # so the policy-lookup and idempotency parts of the gate don't
+            # apply here (an earlier version of this file constructed a Gate
+            # instance for this check and never used it - removed; this
+            # reuses only the cap constant, not the class). The oversized
+            # transfer below (sub_route_demo_004) is still genuinely blocked
+            # twice over: here, and independently by mcp_server.py's
+            # _enforce_tool_level_cap() inside initiate_route_transfer itself
+            # - see tests/test_mcp_server_guard.py for that second layer.
             if rec["amount_paise"] > MAX_ACTION_AMOUNT_PAISE:
                 audit.log(
                     "route_transfer_blocked",
