@@ -638,7 +638,7 @@ python generate_policy_dashboard.py  # writes POLICY_DASHBOARD.html - the
 ## 9. Testing
 
 ```bash
-python -m pytest tests/ -v   # 195 tests, no Ollama server or real keys needed
+python -m pytest tests/ -v   # 206 tests, no Ollama server or real keys needed
 ```
 
 The gate has unit tests independent of the LLM — it must be correct even

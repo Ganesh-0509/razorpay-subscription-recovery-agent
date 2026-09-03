@@ -75,7 +75,7 @@ concrete realization of "per-cart attempt cap."
 from dataclasses import dataclass
 
 from checkout_abandonment_policy import AbandonmentAction, get_abandonment_policy
-from gate import MAX_ACTION_AMOUNT_PAISE
+from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 
 # New to this domain: a MINIMUM value floor (gate.py only ever caps a
 # maximum). Below this, an automated nudge isn't worth sending.
@@ -150,6 +150,19 @@ class AbandonmentGate:
                     f"Amount {amount_paise / 100:.2f} exceeds per-action cap "
                     f"of {MAX_ACTION_AMOUNT_PAISE / 100:.2f}."
                 ),
+                final_action=AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW,
+            )
+
+        # Hard block: run-total spending cap (reused from gate.py) - found
+        # missing here on a later code review (this class tracked
+        # self._run_total_paise from the start but never compared it
+        # against the cap, so the run-total stopping rule was silently
+        # absent for this domain despite this module's own docstring
+        # claiming it was reused). Mirrors gate.py's own check exactly.
+        if self._run_total_paise + amount_paise > MAX_RUN_TOTAL_PAISE:
+            return AbandonmentGateDecision(
+                execute=False,
+                reason="Run-total spending cap would be exceeded.",
                 final_action=AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW,
             )
 

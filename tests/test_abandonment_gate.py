@@ -16,7 +16,7 @@ from abandonment_gate import (
     AbandonmentGate,
 )
 from checkout_abandonment_policy import AbandonmentAction
-from gate import MAX_ACTION_AMOUNT_PAISE
+from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 
 
 def test_gate_executes_correct_policy_action():
@@ -102,6 +102,28 @@ def test_gate_hard_blocks_duplicate_action_same_run():
     assert first.execute
     assert not second.execute
     assert second.final_action == AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW
+
+
+def test_gate_hard_blocks_when_run_total_cap_would_be_exceeded():
+    # Regression test: this gate tracked self._run_total_paise from the
+    # start but never actually compared it against MAX_RUN_TOTAL_PAISE
+    # (found on a later code review - the per-action cap and idempotency
+    # checks were enforced, the run-total one silently wasn't). Directly
+    # seeding the running total mirrors how a real run accumulates it
+    # across many in-cap actions, without needing 10+ real evaluate() calls.
+    gate = AbandonmentGate()
+    gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100
+    decision = gate.evaluate("cart_12", "otp_delay_or_failure", 29900, minutes_since_abandonment=3)
+    assert not decision.execute
+    assert decision.final_action == AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW
+    assert "run-total" in decision.reason.lower()
+
+
+def test_gate_does_not_block_when_run_total_cap_would_not_be_exceeded():
+    gate = AbandonmentGate()
+    gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100000
+    decision = gate.evaluate("cart_13", "otp_delay_or_failure", 29900, minutes_since_abandonment=3)
+    assert decision.execute
 
 
 def test_gate_reuses_the_real_gate_py_cap_constant_not_a_duplicated_number():

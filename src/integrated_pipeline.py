@@ -78,9 +78,12 @@ from receivables_agent import ACTIONABLE as _RECEIVABLES_ACTIONABLE
 from receivables_agent import process_one as _receivables_process_one
 from abandonment_gate import AbandonmentGate
 from audit_log import AuditLogger
+from checkout_abandonment_policy import AbandonmentAction
 from decline_codes import RecoveryAction
 from gate import Gate
 from receivables_gate import ReceivableGate
+from receivables_policy import ReceivableAction
+from recovery_pipeline import count_prior_attempts
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 LOGS_DIR = Path(__file__).parent.parent / "logs"
@@ -106,6 +109,12 @@ DOMAINS: dict[str, dict] = {
         "audit_path": LOGS_DIR / "audit_log.jsonl",
         "process_one": _subscription_process_one,
         "actionable_values": _SUBSCRIPTION_LIKE_ACTIONABLE,
+        # Used only for a per-record dispatch/processing exception - each
+        # domain's own "flag for a human, no automated action taken"
+        # policy value, never a value foreign to that domain's own enum
+        # (found on a later code review: an earlier version of this file
+        # hardcoded the subscription-only value for all four domains).
+        "fallback_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
     },
     "one_time_payment": {
         "id_field": "payment_id",
@@ -114,6 +123,7 @@ DOMAINS: dict[str, dict] = {
         "audit_path": LOGS_DIR / "audit_log_onetime.jsonl",
         "process_one": _onetime_process_one,
         "actionable_values": _SUBSCRIPTION_LIKE_ACTIONABLE,
+        "fallback_action": RecoveryAction.NO_ACTION_UNRECOVERABLE.value,
     },
     "checkout_abandonment": {
         "id_field": "cart_id",
@@ -122,6 +132,7 @@ DOMAINS: dict[str, dict] = {
         "audit_path": LOGS_DIR / "audit_log_checkout_abandonment.jsonl",
         "process_one": _checkout_process_one,
         "actionable_values": {a.value for a in _CHECKOUT_ACTIONABLE},
+        "fallback_action": AbandonmentAction.NO_ACTION_NEEDS_HUMAN_REVIEW.value,
     },
     "overdue_receivable": {
         "id_field": "invoice_id",
@@ -130,6 +141,7 @@ DOMAINS: dict[str, dict] = {
         "audit_path": LOGS_DIR / "audit_log_receivables.jsonl",
         "process_one": _receivables_process_one,
         "actionable_values": {a.value for a in _RECEIVABLES_ACTIONABLE},
+        "fallback_action": ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW.value,
     },
 }
 
@@ -191,17 +203,51 @@ async def run(per_domain: int = 15) -> dict[str, list[dict]]:
     )
     print(f"Processing {len(stream)} records across {len(DOMAINS)} domains (interleaved)...")
 
+    # Cross-run history for the subscription domain's own attempt-cap
+    # stopping rule (gate.py MAX_ATTEMPTS_PER_SUBSCRIPTION) - read once, up
+    # front, exactly like agent.py's own run() does. This domain is the
+    # only one of the four whose process_one() consumes prior_attempt_count
+    # at all; without this, every subscription routed through this
+    # dispatcher would look like a first attempt to the gate regardless of
+    # its real history in logs/audit_log.jsonl (found on a later code
+    # review - a real gap, not a cosmetic one, since it's the exact
+    # cross-run stopping rule this project built and tested).
+    subscription_audit_history = audits["subscription"].read_all()
+
     results: dict[str, list[dict]] = {name: [] for name in DOMAINS}
 
     with patch.object(_mcp_server_module, "SIMULATE", True), \
          patch.object(_mcp_server_module._rp, "simulate", True):
         async with Client(mcp_server) as client:
             for record in stream:
-                domain = identify_domain(record)
+                # A record identify_domain() can't classify is skipped and
+                # logged, not fatal to the whole run - mirrors this
+                # project's own "one bad record must not take down a batch"
+                # convention (agent.py's run()), applied to dispatch itself
+                # rather than just to process_one() (found missing here on
+                # a later code review).
+                try:
+                    domain = identify_domain(record)
+                except ValueError as e:
+                    integrated_audit.log(
+                        "integrated_dispatch_failed",
+                        error=str(e),
+                        record_keys=sorted(record.keys()),
+                    )
+                    print(f"[dispatch-error] skipping unrecognized record: {e}")
+                    continue
+
                 cfg = DOMAINS[domain]
                 record_id = record[cfg["id_field"]]
+                extra_kwargs = {}
+                if domain == "subscription":
+                    extra_kwargs["prior_attempt_count"] = count_prior_attempts(
+                        subscription_audit_history, cfg["id_field"], record_id
+                    )
                 try:
-                    result = await cfg["process_one"](client, gates[domain], audits[domain], record)
+                    result = await cfg["process_one"](
+                        client, gates[domain], audits[domain], record, **extra_kwargs
+                    )
                 except Exception as e:
                     audits[domain].log(
                         "record_processing_error", error=str(e), **{cfg["id_field"]: record_id}
@@ -209,7 +255,7 @@ async def run(per_domain: int = 15) -> dict[str, list[dict]]:
                     result = {
                         cfg["id_field"]: record_id,
                         "amount_paise": record.get("amount_paise", 0),
-                        "final_action": "no_action_unrecoverable",
+                        "final_action": cfg["fallback_action"],
                         "gate_executed": False,
                         "diagnosis_matched_ground_truth": False,
                         "simulated_customer_response": False,

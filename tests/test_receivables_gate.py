@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from gate import MAX_ACTION_AMOUNT_PAISE
+from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 from receivables_gate import (
     DAYS_OVERDUE_LEGAL_REVIEW_THRESHOLD,
     MAX_REMINDERS_BEFORE_ESCALATION,
@@ -113,6 +113,27 @@ def test_gate_hard_blocks_duplicate_action_same_run():
     assert first.execute
     assert not second.execute
     assert second.final_action == ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW
+
+
+def test_gate_hard_blocks_when_run_total_cap_would_be_exceeded():
+    # Regression test: this gate tracked self._run_total_paise from the
+    # start but never actually compared it against MAX_RUN_TOTAL_PAISE
+    # (found on a later code review, the same gap abandonment_gate.py had).
+    # Directly seeding the running total mirrors how a real run accumulates
+    # it across many in-cap actions, without needing 10+ real evaluate() calls.
+    gate = ReceivableGate()
+    gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100
+    decision = gate.evaluate("inv_13", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    assert not decision.execute
+    assert decision.final_action == ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW
+    assert "run-total" in decision.reason.lower()
+
+
+def test_gate_does_not_block_when_run_total_cap_would_not_be_exceeded():
+    gate = ReceivableGate()
+    gate._run_total_paise = MAX_RUN_TOTAL_PAISE - 100000
+    decision = gate.evaluate("inv_14", "payment_process_friction", 45000, days_overdue=3, reminders_sent_count=0)
+    assert decision.execute
 
 
 def test_gate_reuses_the_real_gate_py_cap_constant_not_a_duplicated_number():

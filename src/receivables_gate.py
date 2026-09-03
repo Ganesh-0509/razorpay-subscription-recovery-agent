@@ -112,7 +112,7 @@ automated action per run, exactly like the other two domains.
 
 from dataclasses import dataclass
 
-from gate import MAX_ACTION_AMOUNT_PAISE
+from gate import MAX_ACTION_AMOUNT_PAISE, MAX_RUN_TOTAL_PAISE
 from receivables_policy import NO_ACTION_POLICY_ACTIONS, ReceivableAction, get_receivable_policy
 
 MAX_REMINDERS_BEFORE_ESCALATION = 4
@@ -188,6 +188,18 @@ class ReceivableGate:
                     f"Amount {amount_paise / 100:.2f} exceeds per-action cap "
                     f"of {MAX_ACTION_AMOUNT_PAISE / 100:.2f}."
                 ),
+                final_action=ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW,
+            )
+
+        # Hard block: run-total spending cap (reused from gate.py) - found
+        # missing here on a later code review, the same gap
+        # abandonment_gate.py had: self._run_total_paise was tracked from
+        # the start but never compared against the cap. Mirrors gate.py's
+        # own check exactly.
+        if self._run_total_paise + amount_paise > MAX_RUN_TOTAL_PAISE:
+            return ReceivableGateDecision(
+                execute=False,
+                reason="Run-total spending cap would be exceeded.",
                 final_action=ReceivableAction.NO_ACTION_NEEDS_HUMAN_REVIEW,
             )
 
