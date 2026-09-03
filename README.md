@@ -457,9 +457,10 @@ a hosted product. Here's what to actually show instead of a UI:
     150-record flagship batch, `agent.py`, or `checkout_abandonment_agent.py` in any way. The
     dataset is synthetic and schema-accurate, not sourced from a real accounts-receivable system.
 - **New: this project now covers all three revenue-loss categories Track 3's own problem
-  statement names — the category-scope gap first disclosed here is now closed, though "closed"
-  means each category has a real, tested, standalone implementation, not that all three are
-  wired into one integrated pipeline.** The official track text asks for an agent spanning
+  statement names — the category-scope gap first disclosed here is now closed, and (BUILD_LOG.md
+  §18) all four domains now share one real dispatch entry point, though that is not the same
+  claim as one merged decision engine — see the bullet below for exactly what is and isn't
+  shared.** The official track text asks for an agent spanning
   "payment failures and checkout abandonment... to overdue receivables." What's built:
   `agent.py`/`agent_onetime.py` cover "payment failures" (two entry points),
   `checkout_abandonment_agent.py` covers "checkout abandonment", and `receivables_agent.py`
@@ -475,11 +476,17 @@ a hosted product. Here's what to actually show instead of a UI:
   for its other two nouns. All three domains are built deep (payment failures: 44 tests, three
   rounds of diagnosed LLM accuracy fixes, batch-scale idempotency proof; checkout abandonment and
   overdue receivables: each its own diagnosis stage, policy table, and enforcement layer, tested
-  and live-demonstrated) — but **none of the three is wired into a single integrated pipeline**;
-  they are three separate, standalone demonstrations sharing the same underlying pattern
-  (gate/policy/audit-log/MCP), not one agent that routes a single incoming record to whichever of
-  the three domains applies. That remaining integration gap is stated here rather than glossed
-  over.
+  and live-demonstrated) — and, as of `src/integrated_pipeline.py` (BUILD_LOG.md §18), one real
+  entry point now takes a genuinely mixed, interleaved batch of records from all four domains
+  (subscriptions/one-time payments/checkout abandonment/overdue receivables) and routes each one,
+  purely by its own shape, to the domain-specific logic that already existed and was already
+  proven — without merging any domain's gate, policy table, or audit-log schema, which stay
+  deliberately separate for the same reasons stated in BUILD_LOG.md §16/§17. Real, measured
+  numbers from a live mixed run are in `INTEGRATED_RESULTS.md` and BUILD_LOG.md §18. **What this
+  does NOT do:** it is a dispatch layer over four still-separate decision engines, not one merged
+  gate; the live-run batch was scaled down to 16 records (4/domain) rather than the originally
+  planned 60, a disclosed consequence of this machine's local Ollama inference latency, not a
+  mocked or projected number (BUILD_LOG.md §18 explains why).
 - **New: the "merchant-editable policy" claim was overselling what
   `config/decline_policy.json` alone actually offered, and the fix is
   read-only, not a live dashboard.** Re-checking the claim from the
