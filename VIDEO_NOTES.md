@@ -53,19 +53,22 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
 
 ## PROBLEM
 
-## 0:00–0:45 — What the brief actually asked for, then what I built against it
+## 0:00–0:50 — Who's talking, what the brief asked for, then what I built against it
 
 **Screen:** `README.md` top — title and intro paragraph.
 
 **Say (close to verbatim):**
-> "Track 3 of this buildathon asks for an agent that detects revenue at
-> risk and wins it back — across three situations: a payment that failed,
-> a checkout someone abandoned, and an invoice that's gone unpaid. The
-> bar isn't just spotting the problem — it's showing real money
-> recovered, with rules that stop it from acting recklessly, and a full
-> trail of every decision it makes.
+> "Hi, I'm Ganesh Kumar, and this is my submission for Track 3 of the
+> Razorpay AI Buildathon — AI revenue recovery.
 >
-> This is Recoup, and here's the most concrete version of that problem I
+> So here's what the brief actually asks for: an agent that detects
+> revenue at risk and wins it back, across three situations — a payment
+> that failed, a checkout someone abandoned, and an invoice that's gone
+> unpaid. And the bar isn't just spotting the problem — it's showing real
+> money recovered, with rules that stop it from acting recklessly, and a
+> full trail of every decision it makes.
+>
+> This is Recoup. Here's the most concrete version of that problem I
 > anchored on first: Razorpay auto-retries a failed subscription payment
 > 3 times over 3 days. If all 3 fail, it just stops — no more retries,
 > nothing. Recoup picks up exactly there, and at the other two situations
@@ -73,10 +76,17 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
 > and the safety gate only had to override the AI's own proposal 3
 > times — 2%."
 
-**Why this opening:** states the brief's own framing before naming the
-solution, so a judge evaluates "does this solve what was asked" instead
-of "what is this thing." Only then does the project get named and the
-headline number land.
+**Why this opening, in this order:** a real person presenting says who
+they are before anything else — starting with "Track 3 asks for..."
+sounds like reading the brief back to the judges, not a person talking to
+camera. Say your name first, *then* the brief's own framing (so a judge
+evaluates "does this solve what was asked," not "what is this thing"),
+*then* name the project and land the headline number.
+
+**Say it like you'd say it to a person, not read it like a report:**
+pause after "Hi, I'm Ganesh Kumar" — don't rush into the next sentence.
+That one beat of silence is what makes it sound like a person talking
+instead of a script being read.
 
 ---
 
