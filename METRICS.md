@@ -1,5 +1,18 @@
 # METRICS — verified against raw logs
 
+**Superseded headline numbers, read this first:** this page's 99.3%
+match / 0.7% override figures were correct for the run they were derived
+against, but a later, final, fully-verified re-run (done the day of
+submission, after catching a real-API silent-failure bug — see
+`BUILD_LOG.md` §19) produced different, honest numbers: **98% match, 2%
+override (3/150)**. Left as-is below rather than hand-edited, since this
+page is meant to be re-derived from the raw logs, not patched — but don't
+quote 99.3%/0.7% as current. `RESULTS.md`, `README.md`, and `BUILD_LOG.md`
+§19 have the current, correct figures. The per-code breakdown and error
+pattern *analysis* below (why the model got things wrong, which codes
+clustered) is still the real, valid diagnostic history — only the final
+headline percentage moved.
+
 Every number on this page was recomputed directly from
 `logs/audit_log.jsonl` (302 lines) and `logs/results_checkpoint.jsonl`
 (150 lines), not copied from prose in `RESULTS.md`. Where a

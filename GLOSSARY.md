@@ -106,7 +106,7 @@
 
 **Payment Link** — a shareable URL Razorpay generates that lets a customer pay without a full checkout page. *Used for:* the "nudge the customer to fix their payment" recovery action.
 
-**Policy override** — when the gate replaces the AI's suggested action with the correct one from the policy table, because the two didn't match. Happened on just 0.7% (1/150) of real subscriptions in the final run, down from 22%, 46%, and originally 87%, across three rounds of real prompt-bug fixes — see `BUILD_LOG.md` §9.2.
+**Policy override** — when the gate replaces the AI's suggested action with the correct one from the policy table, because the two didn't match. Happened on just 2% (3/150) of real subscriptions in the final, fully-verified re-run, down from 22%, 46%, and originally 87%, across three rounds of real prompt-bug fixes — see `BUILD_LOG.md` §9.2 and §19 (the final re-run superseded an earlier 0.7% figure).
 
 ---
 
