@@ -22,19 +22,25 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
 1. **Numbers are already final** (see above) — `RESULTS.md`, `REPORT.html`,
    and `POLICY_DASHBOARD.html` are all regenerated and consistent. No need
    to re-run anything unless you change the data yourself.
-2. **Ollama warm.** Run one throwaway `python agent.py` call earlier (even
-   just a few seconds, Ctrl+C it) — a cold model load takes ~20s and will
-   kill your pacing if it happens on camera.
+2. **You do NOT need to warm up Ollama.** This script never calls the
+   model live — every segment shows a pre-generated file or a real
+   dashboard. (An earlier draft of this script had a live
+   `--inject-failure` demo; the final cut below doesn't.)
 3. **Tabs open, in this order, ready to alt-tab through:**
    - Terminal, `cd`'d into `C:\razorpay\src`, font size bumped up
+   - `RESULTS.md` open in the editor
+   - `README.md` §2 open on GitHub (renders the architecture diagram)
+   - `METRICS.md` open in the editor, scrolled to §2.5 (the adversarial fraud-case miss)
+   - `gate.py` open in the editor, scrolled near `def evaluate(`
+   - `BUILD_LOG.md` open in the editor, scrolled to §9.2 (the accuracy table)
    - `REPORT.html` open in a browser tab (light, card-based layout — regenerate fresh per step 1 if you've re-run anything)
    - `POLICY_DASHBOARD.html` open in a second browser tab
-   - `gate.py` open in the editor, scrolled near `def evaluate(`
    - `INTEGRATED_RESULTS.md` open in the editor
+   - Razorpay dashboard, **Test Mode → Payments → Payment Links**, with any real link from your account clicked open and scrolled to its **Notes** field (`source: recovery-agent`, a real `subscription_id`)
    - GitHub repo's **Actions** tab (green checkmarks) — repo is public
    - GitHub repo's **commits** page (real incremental history)
-   - Razorpay dashboard, **Test Mode → Orders**, with a real order ID from `REAL_MCP_RESULTS.md` (e.g. `order_TVya2xkz293ced`) already searched and on screen
-4. **Do one full silent dry run** of the commands below before recording.
+   - `README.md` §3 open on GitHub (the Agent Studio comparison table)
+4. **Do one full silent read-through** of the script below before recording — out loud, no recording, just for pacing.
 
 ---
 
@@ -77,19 +83,23 @@ are engineers, they want the number before the story.
 
 ## 1:25–2:10 — The strongest moment: a fraud case the AI got wrong, and why it didn't matter
 
-**Screen:** terminal.
+**Screen:** `METRICS.md` §2.5 — scroll to and highlight the exact quoted
+case (`"High risk score triggered decline per issuer risk engine"`) and
+the model's own reasoning quote underneath it.
 
-**Say, while typing:**
+**Say:**
 > "I didn't just test this on clean data. I deliberately tried to break
 > it with real payments jargon the model probably hasn't seen much of —
-> terms like 3DS, CNP, acquirer."
+> 3DS, CNP, acquirer — plus one case written to be genuinely hard."
 
-**Then say:**
+**Then say, pointing at the model's own quoted reasoning on screen:**
 > "One case broke it, and it's the worst possible one to get wrong: a
 > fraud case. Described as 'high risk score triggered decline per issuer
-> risk engine' — it contains the word 'risk' twice — the model still
+> risk engine' — it contains the word 'risk' twice — and the model still
 > proposed sending the customer a payment link instead of blocking it and
-> flagging a human. Here's why that's fine anyway."
+> flagging a human. Its own reasoning, right here: it said the decline
+> description 'does not mention any technical/system problem.' Here's why
+> that's fine anyway."
 
 **Screen:** `gate.py`, scrolled to `def evaluate(`, the `decline_code: str` line visible.
 
@@ -167,12 +177,19 @@ folder of JSON.
 
 ## 3:45–4:15 — What's real, not hypothetical
 
-**Screen:** Razorpay dashboard, Test Mode, Orders page, the real order ID visible.
+**Screen:** Razorpay dashboard, Test Mode on, Payments → Payment Links —
+click into any real link from the list, scroll to its **Notes** field.
 
-**Say:**
+**Say, pointing at the Notes field:**
 > "Every one of these numbers comes from something you can check
-> yourself. This order was created by this code, through Razorpay's own
-> official MCP server, with real test-mode keys — not simulated."
+> yourself. This payment link was created by this code, through
+> Razorpay's own official MCP server, with real test-mode keys — not
+> simulated. And this isn't something I could fake by hand: `source:
+> recovery-agent`, and a real subscription ID, written into this link's
+> notes by my code the moment it created it."
+
+**Optional, if there's time:** scroll back up to the list and let a few
+more rows pass on screen — showing this isn't one cherry-picked object.
 
 **Screen:** quick cut to GitHub Actions tab (green checks), then commits page.
 
@@ -205,8 +222,10 @@ matter what.
 
 ## If something goes wrong live
 
-- **Ollama is slow / times out on camera:** cut, say "here's one I ran
-  earlier" and show a line from `logs/audit_log.jsonl` instead.
+- **A browser tab or the Razorpay dashboard is slow to load:** don't wait
+  on camera — pause the recording, let it load, resume. Nothing in this
+  script needs to happen live under time pressure; every screen is a file
+  or page you already have open.
 - **A number you say doesn't match what's on screen:** stop, don't paper
   over it — re-check against a freshly regenerated `RESULTS.md`, not this
   file or `METRICS.md` (both can drift after a rerun; a freshly
