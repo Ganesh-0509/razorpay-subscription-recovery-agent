@@ -31,18 +31,18 @@ POLICY_PATH = Path(__file__).parent.parent / "config" / "decline_policy.json"
 DASHBOARD_PATH = Path(__file__).parent.parent / "POLICY_DASHBOARD.html"
 
 SOURCE_COLORS = {
-    "customer": "#58a6ff",
-    "bank": "#d29922",
-    "gateway": "#8957e5",
-    "network": "#3fb950",
+    "customer": "#3395FF",
+    "bank": "#B98900",
+    "gateway": "#6C4FD0",
+    "network": "#12845A",
 }
 
 ACTION_COLORS = {
-    "immediate_retry": "#3fb950",
-    "delayed_retry": "#58a6ff",
-    "payment_link_nudge": "#d29922",
-    "no_action_fraud": "#f85149",
-    "no_action_unrecoverable": "#8b949e",
+    "immediate_retry": "#12845A",
+    "delayed_retry": "#3395FF",
+    "payment_link_nudge": "#B98900",
+    "no_action_fraud": "#D0342C",
+    "no_action_unrecoverable": "#5C6B7A",
 }
 
 ACTION_LABELS = {
@@ -141,11 +141,11 @@ def build_dashboard():
      data-search="{safe_code} {desc}">
   <div class="card-top">
     <code class="code-name">{safe_code}</code>
-    <span class="pill" style="background:{source_color}22;color:{source_color}">{html.escape(source)}</span>
+    <span class="pill" style="background:{source_color}1A;color:{source_color}">{html.escape(source)}</span>
   </div>
   <div class="desc">{desc}</div>
   <div class="action-row">
-    <span class="pill" style="background:{action_color}22;color:{action_color}">{action_label}</span>
+    <span class="pill" style="background:{action_color}1A;color:{action_color}">{action_label}</span>
   </div>
   <div class="explain">{explanation}</div>
   <div class="sim-note">Simulated success rate: {rate * 100:.0f}% <span class="sim-caveat">(test-data only, not a real guarantee — see note below)</span></div>
@@ -163,55 +163,69 @@ def build_dashboard():
     page_html = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Recovery Policy - Merchant View</title>
 <style>
-  body {{ font: 14px/1.5 -apple-system, Segoe UI, sans-serif; background:#0d1117; color:#c9d1d9; margin:0; padding:32px; }}
-  h1 {{ font-size:20px; color:#f0f6fc; margin-bottom:4px; }}
-  .sub {{ color:#8b949e; margin-bottom:24px; max-width:760px; }}
-  h2 {{ font-size:15px; color:#f0f6fc; margin:32px 0 12px; border-bottom:1px solid #30363d; padding-bottom:6px; }}
-  .stats {{ display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px; }}
-  .stat {{ background:#161b22; border:1px solid #30363d; border-radius:8px; padding:16px 20px; min-width:150px; }}
-  .stat .n {{ font-size:26px; font-weight:600; color:#f0f6fc; }}
-  .stat .l {{ color:#8b949e; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }}
+  * {{ box-sizing:border-box; }}
+  ::selection {{ background:#CFE6FF; color:#0B1E33; }}
+  body {{ font: 14px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; background:#F6F8FB; color:#28384A; margin:0; padding:56px 64px; }}
+  .page {{ max-width:1080px; margin:0 auto; }}
+  h1 {{ font-size:22px; font-weight:650; color:#0B1E33; margin:0 0 6px; letter-spacing:-.015em; }}
+  .sub {{ color:#6B7A8C; margin-bottom:36px; max-width:760px; font-size:13px; }}
+  h2 {{ font-size:12.5px; font-weight:650; color:#6B7A8C; text-transform:uppercase; letter-spacing:.07em; margin:0 0 16px; }}
+  .stats {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:1px; background:#E4E9F0;
+            border:1px solid #E4E9F0; border-radius:12px; overflow:hidden; margin-bottom:48px;
+            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -14px rgba(16,24,40,.14); }}
+  .stat {{ background:#FFFFFF; padding:20px 24px; }}
+  .stat .n {{ font-size:27px; font-weight:650; color:#0B1E33; font-variant-numeric:tabular-nums; }}
+  .stat .l {{ color:#6B7A8C; font-size:11px; text-transform:uppercase; letter-spacing:.06em; margin-top:4px; }}
 
-  .charts {{ display:flex; gap:32px; flex-wrap:wrap; align-items:flex-start; margin-top:16px; }}
-  .chart-block {{ flex:1; min-width:280px; }}
-  .bar-row {{ display:flex; align-items:center; gap:10px; margin:6px 0; }}
-  .bar-label {{ width:110px; flex-shrink:0; color:#c9d1d9; font-size:13px; }}
-  .bar-track {{ flex:1; background:#161b22; border-radius:4px; height:16px; overflow:hidden; }}
+  .panel {{ background:#FFFFFF; border-radius:12px; padding:22px 24px;
+            box-shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -16px rgba(16,24,40,.14); }}
+  .charts {{ display:flex; gap:20px; flex-wrap:wrap; align-items:stretch; margin-bottom:48px; }}
+  .chart-block {{ flex:1; min-width:300px; }}
+  .bar-row {{ display:flex; align-items:center; gap:12px; margin:11px 0; }}
+  .bar-row:first-of-type {{ margin-top:0; }}
+  .bar-label {{ width:100px; flex-shrink:0; color:#3B4A5A; font-size:13px; }}
+  .bar-track {{ flex:1; background:#EEF2F7; border-radius:4px; height:8px; overflow:hidden; }}
   .bar-fill {{ height:100%; border-radius:4px; }}
-  .bar-value {{ width:28px; text-align:right; color:#8b949e; font-size:12px; }}
+  .bar-value {{ width:26px; text-align:right; color:#6B7A8C; font-size:12px; font-weight:650; font-variant-numeric:tabular-nums; }}
 
-  .donut-wrap {{ display:flex; gap:24px; align-items:center; flex-wrap:wrap; }}
-  .donut {{ width:140px; height:140px; border-radius:50%; flex-shrink:0;
-            mask: radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 22px));
-            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 22px), #000 calc(100% - 22px)); }}
-  .legend-row {{ display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0; }}
-  .swatch {{ width:10px; height:10px; border-radius:2px; flex-shrink:0; }}
-  .legend-count {{ color:#8b949e; margin-left:auto; padding-left:12px; }}
+  .donut-wrap {{ display:flex; gap:28px; align-items:center; flex-wrap:wrap; }}
+  .donut {{ width:118px; height:118px; border-radius:50%; flex-shrink:0;
+            mask: radial-gradient(farthest-side, transparent calc(100% - 30px), #000 calc(100% - 30px));
+            -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 30px), #000 calc(100% - 30px)); }}
+  .legend-row {{ display:flex; align-items:center; gap:8px; font-size:13px; margin:7px 0; }}
+  .swatch {{ width:8px; height:8px; border-radius:2px; flex-shrink:0; }}
+  .legend-count {{ color:#6B7A8C; margin-left:auto; padding-left:18px; font-weight:650; font-variant-numeric:tabular-nums; }}
 
-  .controls {{ display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; margin:8px 0 20px; }}
-  input#search {{ background:#161b22; border:1px solid #30363d; color:#c9d1d9; padding:6px 10px; border-radius:6px; width:260px; }}
-  .filter-group {{ display:flex; flex-direction:column; gap:4px; }}
-  .filter-group .label {{ color:#8b949e; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }}
+  .controls {{ display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start; margin:8px 0 20px; }}
+  input#search {{ background:#F6F8FB; border:1px solid #E4E9F0; color:#28384A; padding:9px 13px; border-radius:8px; width:280px; font-size:13px; }}
+  input#search:focus {{ outline:none; border-color:#3395FF; background:#FFFFFF; box-shadow:0 0 0 3px rgba(51,149,255,.15); }}
+  .filter-group {{ display:flex; flex-direction:column; gap:7px; }}
+  .filter-group .label {{ color:#6B7A8C; font-size:11px; text-transform:uppercase; letter-spacing:.06em; }}
   .pill-row {{ display:flex; gap:6px; flex-wrap:wrap; }}
-  .pill-btn {{ background:#161b22; border:1px solid #30363d; color:#c9d1d9; padding:4px 10px; border-radius:14px;
-               font-size:12px; cursor:pointer; }}
-  .pill-btn.active {{ background:#1f6feb; border-color:#1f6feb; color:#fff; }}
+  .pill-btn {{ background:#FFFFFF; border:1px solid #E4E9F0; color:#3B4A5A; padding:5px 13px; border-radius:99px;
+               font-size:12px; cursor:pointer; transition:border-color .12s, color .12s; }}
+  .pill-btn:hover {{ border-color:#3395FF; color:#0B1E33; }}
+  .pill-btn.active {{ background:#3395FF; border-color:#3395FF; color:#fff; }}
 
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px; margin-top:8px; }}
-  .card {{ background:#161b22; border:1px solid #30363d; border-radius:10px; padding:14px 16px; }}
-  .card-top {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
-  .code-name {{ font-size:13px; color:#f0f6fc; }}
-  .desc {{ color:#c9d1d9; font-size:13px; margin-bottom:10px; min-height:36px; }}
-  .action-row {{ margin-bottom:8px; }}
-  .pill {{ padding:2px 8px; border-radius:10px; font-weight:600; font-size:11px; }}
-  .explain {{ color:#8b949e; font-size:12.5px; margin-bottom:10px; }}
-  .sim-note {{ color:#6e7681; font-size:11px; border-top:1px solid #21262d; padding-top:8px; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px; margin-top:8px; }}
+  .card {{ background:#FFFFFF; border-radius:12px; padding:18px 20px;
+           box-shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 18px -12px rgba(16,24,40,.14);
+           transition:box-shadow .15s, transform .15s; }}
+  .card:hover {{ box-shadow:0 1px 2px rgba(16,24,40,.05), 0 12px 28px -12px rgba(16,24,40,.18); transform:translateY(-1px); }}
+  .card-top {{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px; }}
+  .code-name {{ font-size:13px; color:#0B1E33; font-weight:650; }}
+  .desc {{ color:#3B4A5A; font-size:13px; margin-bottom:12px; min-height:36px; }}
+  .action-row {{ margin-bottom:10px; }}
+  .pill {{ padding:3px 10px; border-radius:99px; font-weight:650; font-size:11.5px; white-space:nowrap; }}
+  .explain {{ color:#6B7A8C; font-size:12.5px; margin-bottom:12px; }}
+  .sim-note {{ color:#8B98A8; font-size:11px; border-top:1px solid #F0F3F7; padding-top:10px; font-variant-numeric:tabular-nums; }}
   .sim-caveat {{ font-style:italic; }}
-  .empty {{ color:#8b949e; padding:24px; text-align:center; display:none; }}
-  .note {{ color:#8b949e; font-size:12px; margin-top:32px; max-width:760px; }}
-  .note b {{ color:#c9d1d9; }}
+  .empty {{ color:#6B7A8C; padding:24px; text-align:center; display:none; }}
+  .note {{ color:#6B7A8C; font-size:12.5px; margin-top:40px; max-width:760px; line-height:1.65; }}
+  .note b {{ color:#0B1E33; }}
 </style></head>
 <body>
+<div class="page">
 <h1>Recovery Policy — Merchant View</h1>
 <div class="sub">Generated directly from <code>config/decline_policy.json</code> — the exact live policy the gate
 enforces, not a mockup or a separate copy. Read-only by design; see the note at the bottom for why.</div>
@@ -223,11 +237,11 @@ enforces, not a mockup or a separate copy. Read-only by design; see the note at 
 </div>
 
 <div class="charts">
-  <div class="chart-block">
+  <div class="chart-block panel">
     <h2>By who/what caused the failure</h2>
     {source_bars}
   </div>
-  <div class="chart-block">
+  <div class="chart-block panel">
     <h2>By what the system does about it</h2>
     <div class="donut-wrap">
       {donut_html}
@@ -270,6 +284,7 @@ enforces, not a mockup or a separate copy. Read-only by design; see the note at 
   built. Changing the actual policy still means editing <code>config/decline_policy.json</code> directly; that
   file's own git history already serves as the audit trail for who changed what and when. See README.md's Known
   Limitations for the full reasoning.
+</div>
 </div>
 
 <script>

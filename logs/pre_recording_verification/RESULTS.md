@@ -8,12 +8,12 @@ This file reports it honestly as simulated throughout.
 
 - Total halted subscriptions processed: **150**
 - Total value of halted subscriptions: **Rs 150,729.35**
-- Actions executed (retries/nudges the gate let through): **104**
-- Simulated recovered amount: **Rs 41,819.81** (41/104 executed actions 'succeeded' in simulation)
+- Actions executed (retries/nudges the gate let through): **108**
+- Simulated recovered amount: **Rs 42,327.28** (43/108 executed actions 'succeeded' in simulation)
 - LLM proposals the gate had to override (policy mismatch): **3/150** (2% - the gate, not the model, is what makes this safe)
 - Hard-blocked by gate (spending cap / duplicate): **0**
 - Correctly refused as fraud-flagged (never retried): **0**
-- Correctly identified as unrecoverable (no action taken): **46**
+- Correctly identified as unrecoverable (no action taken): **42**
 
 ## By decline code
 
@@ -31,17 +31,16 @@ This file reports it honestly as simulated throughout.
 | debit_instrument_blocked | 1 | no_action_unrecoverable |
 | debit_instrument_inactive | 2 | no_action_unrecoverable |
 | debit_instrument_inactive | 1 | payment_link_nudge |
-| gateway_technical_error | 5 | immediate_retry |
-| gateway_technical_error | 3 | no_action_unrecoverable |
+| gateway_technical_error | 6 | immediate_retry |
+| gateway_technical_error | 2 | no_action_unrecoverable |
 | incorrect_cvv | 2 | no_action_unrecoverable |
 | incorrect_cvv | 6 | payment_link_nudge |
-| insufficient_funds | 27 | delayed_retry |
-| insufficient_funds | 14 | no_action_unrecoverable |
+| insufficient_funds | 28 | delayed_retry |
+| insufficient_funds | 13 | no_action_unrecoverable |
 | payment_cancelled | 3 | no_action_unrecoverable |
 | payment_cancelled | 2 | payment_link_nudge |
 | payment_failed | 5 | payment_link_nudge |
 | payment_risk_check_failed | 1 | payment_link_nudge |
-| payment_timed_out | 1 | immediate_retry |
-| payment_timed_out | 4 | no_action_unrecoverable |
-| transaction_limit_exceeded | 4 | delayed_retry |
-| transaction_limit_exceeded | 1 | no_action_unrecoverable |
+| payment_timed_out | 2 | immediate_retry |
+| payment_timed_out | 3 | no_action_unrecoverable |
+| transaction_limit_exceeded | 5 | delayed_retry |

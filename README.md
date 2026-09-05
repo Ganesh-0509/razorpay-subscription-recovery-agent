@@ -136,8 +136,8 @@ pattern from first principles. Full reasoning in `BUILD_LOG.md` §1.1.
 | Guardrail logic | Internal certification process (closed) | One human-readable, validated JSON config |
 | Audit trail | Hosted dashboard summary ("what/when") | Raw per-decision JSONL — LLM reasoning + gate override reasoning both logged |
 | Access | Sales-assisted early access (Typeform) | Runs today, $0, personal test-mode account |
-| **Test coverage** | Not public | **90 automated tests, CI-verified on every push** |
-| **Domain scope** | Separate named agent per use case | **One gate/policy pattern reused unchanged across two domains** — subscriptions and one-time payments ([§10](#10-stretch-goals)) |
+| **Test coverage** | Not public | **206 automated tests, CI-verified on every push** |
+| **Domain scope** | Separate named agent per use case | **One gate/policy pattern reused across all 4 domains** — subscriptions, one-time payments, checkout abandonment, and overdue receivables — plus a dispatcher that routes a single mixed batch to all four ([§10](#10-stretch-goals), `INTEGRATED_RESULTS.md`) |
 | **Model accuracy, published** | Not public | **Published in full** — exact match rate, confusion patterns, and two rounds of diagnosed prompt fixes ([`METRICS.md`](METRICS.md)) |
 | **Real-integration proof** | N/A (their own product) | **Verifiable independently** — real Razorpay test-mode object IDs anyone can look up ([§5](#5-visual-proof--no-frontend-needed)) |
 
