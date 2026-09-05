@@ -1,16 +1,18 @@
-# Razorpay AI Buildathon — Subscription Recovery Agent
+# Recoup
 
 [![tests](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/Ganesh-0509/razorpay-subscription-recovery-agent/actions/workflows/tests.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Track 3 — AI Revenue Recovery**
+**Razorpay AI Buildathon — Track 3, AI Revenue Recovery**
 
 A bounded, gated, audited agent that picks up exactly where Razorpay's own
-subscription engine gives up — detects a halted subscription, decides the
-right recovery intervention, and executes it with a measured ₹ recovered,
-stopping rules, and a full audit trail. Also a small, honest rebuild of the
-pattern behind Razorpay's own Agent Studio, built to prove the
-architecture, not to compete with the product.
+systems give up on a payment — across all three named categories: a halted
+subscription, an abandoned checkout, and an overdue B2B receivable. It
+detects revenue at risk, decides the right recovery intervention, and
+executes it with a measured ₹ recovered, stopping rules, and a full audit
+trail. Also a small, honest rebuild of the pattern behind Razorpay's own
+Agent Studio, built to prove the architecture, not to compete with the
+product.
 
 ---
 
