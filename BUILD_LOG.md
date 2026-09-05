@@ -5,16 +5,14 @@
 **Program:** Razorpay AI Buildathon 2026 (student-only, no resume screening — you build, they call you in if it shows signal)
 **Purpose of this file:** a running, append-only log. Every time we finalize a concept, algorithm, tool, or design choice, it gets written down here with the reasoning — so nothing has to be re-decided or re-explained later. Sections are added one at a time, in the order we actually worked through them. This file supersedes the earlier `PRD.md`/`DRD.md` split — everything from both now lives here, in one place, matching the structure below.
 
-**Companion files:** `EASY_EXPLAINER.md` (plain-language walkthrough of every layer, one running example throughout) · `GLOSSARY.md` (every acronym/term, expanded — look here first if a term is unfamiliar).
-
 ---
 
 ## Table of Contents
 
 1. [Problem Statement](#1-problem-statement) — done
    - [1.1 Relationship to Razorpay's own Subscription Recovery Agent](#11-relationship-to-razorpays-own-subscription-recovery-agent) — done
-2. [Technology & Algorithm Decisions](#2-technology--algorithm-decisions) — done — *plain-language version: `EASY_EXPLAINER.md`*
-3. [Architecture Design](#3-architecture-design) — done — *plain-language version: `EASY_EXPLAINER.md`*
+2. [Technology & Algorithm Decisions](#2-technology--algorithm-decisions) — done
+3. [Architecture Design](#3-architecture-design) — done
 4. [Communication Protocol Design](#4-communication-protocol-design) — done
 5. [Safety Gate — Detailed Design](#5-safety-gate--detailed-design) — done
 6. [Recovery Action Policy — Detailed Design](#6-recovery-action-policy--detailed-design) — done
@@ -89,8 +87,6 @@ will actually open, not the track whose rubric sounds hardest to fake.
 
 ## 2. Technology & Algorithm Decisions
 
-> For a plain-language, example-driven walkthrough of every layer below (no jargon, one running subscription example), see the companion file: **`EASY_EXPLAINER.md`**.
-
 Goal for this section: pick a stack that is **credible as "the same pattern Razorpay itself ships,"** not a generic AI-wrapper demo — meaning it reuses Razorpay's own real, published tooling wherever that tooling exists, and reserves custom engineering effort for the actual novelty (the gate, the policy table, the recovery-decision loop). A judge who works anywhere near Razorpay's own Agent Studio team will discount a submission that reinvents things Razorpay already publishes instead of building on them — and will notice one that doesn't.
 
 ### 2.1 Quick-reference decision table
@@ -154,8 +150,6 @@ Goal for this section: pick a stack that is **credible as "the same pattern Razo
 ---
 
 ## 3. Architecture Design
-
-> For a plain-language walkthrough of "what actually happens to one subscription," see the companion file: **`EASY_EXPLAINER.md`**.
 
 ### 3.1 The core architectural principle: two paths, split by what's allowed to be trusted
 

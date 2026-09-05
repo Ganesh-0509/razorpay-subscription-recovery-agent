@@ -258,9 +258,6 @@ the scannable version.
 Full project docs: [`BUILD_LOG.md`](BUILD_LOG.md) (problem statement, every
 technical decision with reasoning, architecture, protocol, gate design,
 real results — the single source of truth) ·
-[`EASY_EXPLAINER.md`](EASY_EXPLAINER.md) (plain-language walkthrough, one
-running example throughout) ·
-[`GLOSSARY.md`](GLOSSARY.md) (every term used, defined) ·
 [`METRICS.md`](METRICS.md) (every number verified directly against the raw
 audit log, including the LLM's exact error patterns)
 
@@ -415,8 +412,6 @@ Documented in full in `BUILD_LOG.md` §3.6/§12/§19, kept in because it's real:
 | Doc | What's in it |
 |---|---|
 | [`BUILD_LOG.md`](BUILD_LOG.md) | The single source of truth — problem statement, every technical decision with reasoning, architecture, protocol, gate design, full results |
-| [`EASY_EXPLAINER.md`](EASY_EXPLAINER.md) | Plain-language walkthrough, one running example throughout, no jargon |
-| [`GLOSSARY.md`](GLOSSARY.md) | Every acronym/term used anywhere, expanded |
 | [`METRICS.md`](METRICS.md) | Every headline number, re-derived from raw logs, including the model's exact error patterns |
 | [`RESULTS.md`](RESULTS.md) / [`RESULTS_ONETIME.md`](RESULTS_ONETIME.md) / [`ROUTE_RESULTS.md`](ROUTE_RESULTS.md) | Auto-generated per-run output |
 | [`REAL_MCP_RESULTS.md`](REAL_MCP_RESULTS.md) | Real Razorpay test-mode objects created via the official MCP server |
