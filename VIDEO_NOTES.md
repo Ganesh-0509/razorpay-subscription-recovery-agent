@@ -5,6 +5,13 @@ before making the repo public if you don't want prep notes visible, or
 leave it in, it doesn't hurt. Written as a script you can read close to
 verbatim.
 
+**Structure, and why it's in this order:** Problem → Solution → How it
+works → Proof it works → Honest limitations → Close. Limitations get
+their own dedicated beat near the end, stated on purpose, not tucked into
+another segment as an aside — a limitation you say confidently reads as
+self-awareness; one buried as a footnote reads like you're hoping it gets
+skimmed past.
+
 **Numbers below are final, from a clean, fully-verified re-run** (150/150
 records, confirmed 0 real API calls, 0 failures — recovering from a real,
 disclosed bug where some earlier checkpoint entries were real,
@@ -24,10 +31,9 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
    to re-run anything unless you change the data yourself.
 2. **You do NOT need to warm up Ollama.** This script never calls the
    model live — every segment shows a pre-generated file or a real
-   dashboard. (An earlier draft of this script had a live
-   `--inject-failure` demo; the final cut below doesn't.)
+   dashboard.
 3. **Tabs open, in this order, ready to alt-tab through:**
-   - Terminal, `cd`'d into `C:\razorpay\src`, font size bumped up
+   - `README.md` top (title + intro) open on GitHub
    - `RESULTS.md` open in the editor
    - `README.md` §2 open on GitHub (renders the architecture diagram)
    - `METRICS.md` open in the editor, scrolled to §2.5 (the adversarial fraud-case miss)
@@ -36,6 +42,7 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
    - `REPORT.html` open in a browser tab (light, card-based layout — regenerate fresh per step 1 if you've re-run anything)
    - `POLICY_DASHBOARD.html` open in a second browser tab
    - `INTEGRATED_RESULTS.md` open in the editor
+   - `README.md` §6 open on GitHub (Known Limitations)
    - Razorpay dashboard, **Test Mode → Payments → Payment Links**, with any real link from your account clicked open and scrolled to its **Notes** field (`source: recovery-agent`, a real `subscription_id`)
    - GitHub repo's **Actions** tab (green checkmarks) — repo is public
    - GitHub repo's **commits** page (real incremental history)
@@ -44,28 +51,38 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
 
 ---
 
-## 0:00–0:45 — Open with the number, not the pitch
+## PROBLEM
 
-**Screen:** terminal, blank, then `RESULTS.md` opened in the editor.
+## 0:00–0:45 — What the brief actually asked for, then what I built against it
+
+**Screen:** `README.md` top — title and intro paragraph.
 
 **Say (close to verbatim):**
-> "This is Recoup. Razorpay auto-retries a failed subscription payment 3
-> times over 3 days. If all 3 fail, the subscription goes `halted`, and
-> nothing tries again automatically — that's real, documented behavior,
-> not an assumption. Recoup picks up exactly there. 150 real halted
-> subscriptions, ₹1,50,729 total value, and the safety gate only had to
-> override the AI's own proposal 3 times — 2%. That number is the whole
-> pitch, and I'm going to spend this video proving it, not just stating
-> it: why the number is low, and one case where the AI got something
-> dangerously wrong that never reached Razorpay anyway."
+> "Track 3 of this buildathon asks for an agent that detects revenue at
+> risk and wins it back — across three situations: a payment that failed,
+> a checkout someone abandoned, and an invoice that's gone unpaid. The
+> bar isn't just spotting the problem — it's showing real money
+> recovered, with rules that stop it from acting recklessly, and a full
+> trail of every decision it makes.
+>
+> This is Recoup, and here's the most concrete version of that problem I
+> anchored on first: Razorpay auto-retries a failed subscription payment
+> 3 times over 3 days. If all 3 fail, it just stops — no more retries,
+> nothing. Recoup picks up exactly there, and at the other two situations
+> the brief names. 150 real halted subscriptions, ₹1,50,729 total value,
+> and the safety gate only had to override the AI's own proposal 3
+> times — 2%."
 
-**Why this opening:** name the project first (it's on the application
-form), then lead with evidence from `RESULTS.md`, not framing — judges
-are engineers, they want the number before the story.
+**Why this opening:** states the brief's own framing before naming the
+solution, so a judge evaluates "does this solve what was asked" instead
+of "what is this thing." Only then does the project get named and the
+headline number land.
 
 ---
 
-## 0:45–1:25 — Architecture in 40 seconds
+## SOLUTION — HOW IT WORKS
+
+## 0:45–1:20 — Architecture in 35 seconds
 
 **Screen:** `README.md` §2 on GitHub — the Mermaid diagram renders live there.
 
@@ -75,121 +92,118 @@ are engineers, they want the number before the story.
 > through a plain, deterministic gate: no model involved, just a policy
 > table, a spending cap, and a duplicate check. Only after the gate
 > approves does anything reach Razorpay — through their own official MCP
-> server when real keys are set, the same integration pattern their own
-> Agent Studio uses. Every decision, whether allowed or refused, gets one
-> line in an audit log."
+> server when real keys are set. Every decision, allowed or refused, gets
+> one line in an audit log."
 
 ---
 
-## 1:25–2:10 — The strongest moment: a fraud case the AI got wrong, and why it didn't matter
+## PROOF IT WORKS
+
+## 1:20–2:00 — The strongest moment: a fraud case the AI got wrong, and why it didn't matter
 
 **Screen:** `METRICS.md` §2.5 — scroll to and highlight the exact quoted
 case (`"High risk score triggered decline per issuer risk engine"`) and
 the model's own reasoning quote underneath it.
 
 **Say:**
-> "I didn't just test this on clean data. I deliberately tried to break
-> it with real payments jargon the model probably hasn't seen much of —
-> 3DS, CNP, acquirer — plus one case written to be genuinely hard."
-
-**Then say, pointing at the model's own quoted reasoning on screen:**
-> "One case broke it, and it's the worst possible one to get wrong: a
-> fraud case. Described as 'high risk score triggered decline per issuer
-> risk engine' — it contains the word 'risk' twice — and the model still
-> proposed sending the customer a payment link instead of blocking it and
-> flagging a human. Its own reasoning, right here: it said the decline
-> description 'does not mention any technical/system problem.' Here's why
-> that's fine anyway."
+> "I deliberately tried to break this with real payments jargon the
+> model probably hasn't seen much of — 3DS, CNP, acquirer — plus one case
+> written to be genuinely hard. One broke it: a fraud case, described as
+> 'high risk score triggered decline per issuer risk engine' — the word
+> 'risk' twice — and the model still proposed a payment link instead of
+> flagging a human. Its own reasoning, right here: it said the
+> description 'does not mention any technical/system problem.'"
 
 **Screen:** `gate.py`, scrolled to `def evaluate(`, the `decline_code: str` line visible.
 
 **Say:**
-> "The gate doesn't look at what the AI said, or the description text at
-> all. It looks up the correct action from the real, structured decline
-> code Razorpay sends — `payment_risk_check_failed` — independently. So
-> even in the one case where I proved the model gets it wrong, the wrong
-> answer never reaches Razorpay. And this is a deliberate choice, not a
-> default: I could have put another AI model in front of this one to
-> double-check it. I didn't, on purpose — a check like this needs to be
-> guaranteed, not just probably right, and only plain code gives you that."
-
-**Why this is the centerpiece:** it's simultaneously a real failure, proof
-the safety design works, and your clearest answer to "where did you choose
-not to use AI, and why."
+> "The gate doesn't look at what the AI said. It looks up the correct
+> action from the real decline code independently, so the wrong answer
+> never reaches Razorpay. This is a deliberate choice — I could have put
+> another AI model in front of this one to double-check it. I didn't, on
+> purpose: a check like this needs to be guaranteed, not just probably
+> right, and only plain code gives you that."
 
 ---
 
-## 2:10–2:40 — The debugging story, compressed
+## 2:00–2:25 — The debugging story, compressed
 
 **Screen:** `BUILD_LOG.md` §9.2 table.
 
 **Say:**
 > "That 2% didn't come from nowhere. First run, the model was wrong 87%
-> of the time — a tool schema bug where it read 'fraud' as a generic 'do
-> nothing' bucket even while reasoning out loud that a case wasn't fraud.
-> Fixed that, got to 46%. Found two more systematic biases, fixed those,
-> got to 22% — but that fix broke three *other* decline codes, found only
-> by actually re-running the batch. Fixed those with negative examples
-> naming the exact mistakes. Final, fully-verified run: 2%. A good model
-> makes the gate cheap to run. It never makes the gate optional."
+> of the time — a schema bug reading 'fraud' as generic 'do nothing.'
+> Fixed it, got to 46%. Found two more biases, got to 22% — but that fix
+> broke three other codes, found only by re-running the batch. Fixed
+> those too. A good model makes the gate cheap to run. It never makes the
+> gate optional."
 
 ---
 
-## 2:40–3:05 — What the actual output looks like
+## 2:25–2:45 — What the actual output looks like
 
 **Screen:** `REPORT.html`, then a quick cut to `POLICY_DASHBOARD.html`.
 
 **Say:**
-> "This page is generated straight from the audit log — no AI, no server,
-> just the raw decisions rendered readable. And this one is the merchant
-> side: every decline code in plain English, so changing how the system
-> handles one doesn't mean reading Python."
-
-**Why this segment exists:** these two pages are the closest thing this
-backend-only project has to a UI, and they were never on camera in the
-previous cut of this script — worth 25 seconds to prove this isn't just a
-folder of JSON.
+> "This page is generated straight from the audit log — no AI, no
+> server. And this one's the merchant side: every decline code in plain
+> English, so changing how the system handles one doesn't mean reading
+> Python."
 
 ---
 
-## 3:05–3:45 — All three required categories, one dispatcher
+## 2:45–3:20 — All three required categories, one dispatcher
 
 **Screen:** `INTEGRATED_RESULTS.md`.
 
 **Say:**
-> "The brief names three categories: payment failures, checkout
-> abandonment, and overdue receivables. All three are real, separate,
-> tested pipelines — not one flow stretched to cover three. And this file
-> proves they're not disconnected scripts: one mixed batch, 16 records
-> spanning all of them at once, gets routed automatically to the right
-> handler by record shape alone — zero misrouting, by construction. ₹7.15
-> lakh at risk in that one batch, real diagnosis and gate logic per
-> category, one shared audit trail."
-
-**Say, if time allows — the honest scope boundary:**
-> "The brief also lists example directions I didn't build — a Hinglish
-> voice interface, a mandate retry sequencer, a promise-to-pay tracker.
-> Those needed infrastructure outside this scope. I went deep on the
-> three categories the brief actually requires instead of thin across
-> every example it suggests."
+> "All three categories the brief names are real, separate, tested
+> pipelines — not one flow stretched to cover three. This file proves
+> they're not disconnected: one mixed batch, 16 records spanning all of
+> them, gets routed automatically to the right handler by record shape
+> alone — zero misrouting, by construction. ₹7.15 lakh at risk in that
+> one batch, real diagnosis and gate logic per category, one shared audit
+> trail."
 
 ---
 
-## 3:45–4:15 — What's real, not hypothetical
+## HONEST LIMITATIONS
+
+## 3:20–3:50 — What I didn't build, said plainly
+
+**Screen:** `README.md` §6, Known Limitations.
+
+**Say:**
+> "Two things I want to say plainly rather than let you find out. First:
+> the brief lists example directions beyond the three required categories
+> — a Hinglish voice interface, a mandate retry sequencer, a
+> promise-to-pay tracker. I didn't build those. They needed
+> infrastructure outside this scope, and I chose to go deep on the three
+> categories actually required instead of thin across every example
+> suggested. Second: checkout abandonment and receivables are dispatched
+> through one router, but they're still separate decision engines, not
+> one merged brain — a deliberate boundary, documented, not a shortcut I
+> tried to hide."
+
+**Why this segment exists, and why here specifically:** stated with its
+own timestamp, confidently, right before the closing proof — not
+apologized for, not buried inside another point.
+
+---
+
+## WHAT'S REAL, NOT HYPOTHETICAL
+
+## 3:50–4:20 — Independently verifiable proof
 
 **Screen:** Razorpay dashboard, Test Mode on, Payments → Payment Links —
 click into any real link from the list, scroll to its **Notes** field.
 
 **Say, pointing at the Notes field:**
-> "Every one of these numbers comes from something you can check
-> yourself. This payment link was created by this code, through
-> Razorpay's own official MCP server, with real test-mode keys — not
-> simulated. And this isn't something I could fake by hand: `source:
+> "Every number so far comes from something you can check yourself. This
+> payment link was created by this code, through Razorpay's own official
+> MCP server — and this isn't something I could fake by hand: `source:
 > recovery-agent`, and a real subscription ID, written into this link's
 > notes by my code the moment it created it."
-
-**Optional, if there's time:** scroll back up to the list and let a few
-more rows pass on screen — showing this isn't one cherry-picked object.
 
 **Screen:** quick cut to GitHub Actions tab (green checks), then commits page.
 
@@ -199,7 +213,9 @@ more rows pass on screen — showing this isn't one cherry-picked object.
 
 ---
 
-## 4:15–4:45 — Close
+## CLOSE
+
+## 4:20–4:50 — Close
 
 **Screen:** README §3 comparison table (Agent Studio vs. this project).
 
@@ -209,14 +225,14 @@ more rows pass on screen — showing this isn't one cherry-picked object.
 > with it. Theirs is a voice call and a closed guardrail process. Recoup
 > is a raw log anyone can grep, a policy file anyone can edit with no
 > redeploy, and every claim backed by something you can independently
-> check across all three required categories. The point was never to
-> out-build a production team in a week — it's to prove I can build the
-> exact pattern behind it, and be honest about every place it still falls
-> short."
+> check. The point was never to out-build a production team in a week —
+> it's to prove I can build the exact pattern behind it, and be honest
+> about every place it still falls short."
 
-**Hard stop at ~4:45–5:00.** If running long, cut from the *end*
-backward — the fraud-case segment (1:25–2:10) is the one to protect no
-matter what.
+**Hard stop at ~4:50–5:00.** If running long, cut from the *end*
+backward, but protect these two no matter what: the fraud-case segment
+(1:20–2:00) and the honest-limitations segment (3:20–3:50) — those are
+what a Track 3 judge is actually scoring, in that order.
 
 ---
 
@@ -230,7 +246,6 @@ matter what.
   over it — re-check against a freshly regenerated `RESULTS.md`, not this
   file or `METRICS.md` (both can drift after a rerun; a freshly
   regenerated `RESULTS.md` is always the source of truth).
-- **Running short on time:** cut the debugging story (2:10–2:40) to just
+- **Running short on time:** cut the debugging story (2:00–2:25) to just
   the headline number, one sentence. Never cut the fraud case or the
-  all-three-categories segment — those two are what a Track 3 judge is
-  actually scoring.
+  honest-limitations segment.
