@@ -68,13 +68,16 @@ was a real number for an earlier run, not this one. Say **"2%,"** never
 > money recovered, with rules that stop it from acting recklessly, and a
 > full trail of every decision it makes.
 >
-> This is Recoup. Here's the most concrete version of that problem I
-> anchored on first: Razorpay auto-retries a failed subscription payment
-> 3 times over 3 days. If all 3 fail, it just stops — no more retries,
-> nothing. Recoup picks up exactly there, and at the other two situations
-> the brief names. 150 real halted subscriptions, ₹1,50,729 total value,
-> and the safety gate only had to override the AI's own proposal 3
-> times — 2%."
+> This is Recoup. The most concrete version of that problem — the one I
+> built against first — is subscriptions. Razorpay auto-retries a failed
+> payment 3 times over 3 days, and if all 3 fail, it just stops. No more
+> retries, nothing. Recoup picks up exactly there, and at the other two
+> situations the brief names as well.
+>
+> Let me open with the subscription numbers, since that's where I tested
+> the deepest: 150 real halted subscriptions, just over ₹1.5 lakh at
+> risk. And out of all 150, the safety gate only had to step in and
+> override the AI 3 times. That's 2 percent."
 
 **Why this opening, in this order:** a real person presenting says who
 they are before anything else — starting with "Track 3 asks for..."
@@ -85,8 +88,12 @@ evaluates "does this solve what was asked," not "what is this thing"),
 
 **Say it like you'd say it to a person, not read it like a report:**
 pause after "Hi, I'm Ganesh Kumar" — don't rush into the next sentence.
-That one beat of silence is what makes it sound like a person talking
-instead of a script being read.
+Pause again before "Let me open with the subscription numbers" — that
+line is doing real work, it's the bridge from talking about the problem
+to talking about proof, and rushing it is what makes a script suddenly
+sound like a stats sheet being read aloud. Give the numbers themselves
+room too: a small breath after "150 real halted subscriptions," not one
+long unbroken sentence.
 
 ---
 
